@@ -14,13 +14,16 @@ import {
   MessageSquare,
   Sparkles,
   RefreshCw,
+  Building2,
+  Newspaper,
 } from "lucide-react"
 import { TradingViewChart } from "@/components/tradingview-chart"
 import { AnalysisChart } from "@/components/analysis-chart"
-import { NewsPanel } from "@/components/news-panel"
 import { ChatPanel } from "@/components/chat-panel"
 import { AIImageCard } from "@/components/ai-image-card"
 import { ProbabilityCalculator } from "@/components/probability-calculator"
+import { EnhancedStockSelector } from "@/components/enhanced-stock-selector"
+import { EnhancedNewsPanel } from "@/components/enhanced-news-panel"
 
 interface MarketIndex {
   symbol: string
@@ -33,8 +36,19 @@ interface MarketIndex {
   source: string
 }
 
+interface StockData {
+  symbol: string
+  name: string
+  sector: string
+  marketCap: string
+  exchange: string
+}
+
 export default function TradingDashboard() {
   const [showProbability, setShowProbability] = useState(false)
+  const [showStockSelector, setShowStockSelector] = useState(false)
+  const [selectedStock, setSelectedStock] = useState("RELIANCE.NS")
+  const [selectedStockData, setSelectedStockData] = useState<StockData | null>(null)
   const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([])
   const [indicesLoading, setIndicesLoading] = useState(false)
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
@@ -138,7 +152,7 @@ export default function TradingDashboard() {
       if (isComponentMountedRef.current) {
         fetchMarketIndices()
       }
-    }, 2000) // Update every 2 seconds
+    }, 3000) // Update every 3 seconds
 
     // Cleanup function
     return () => {
@@ -163,6 +177,14 @@ export default function TradingDashboard() {
     fetchMarketIndices()
   }, [fetchMarketIndices])
 
+  const handleStockSelect = (symbol: string) => {
+    setSelectedStock(symbol)
+  }
+
+  const handleStockChange = (stock: StockData) => {
+    setSelectedStockData(stock)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Header */}
@@ -174,11 +196,11 @@ export default function TradingDashboard() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">ECHART PRO</h1>
-              <p className="text-sm text-white/70">Live NSE • Advanced Analytics • AI Insights</p>
+              <p className="text-sm text-white/70">Live NSE/BSE • Real-time News • AI Analytics</p>
             </div>
           </div>
 
-          {/* Live Market Indices - Single Line with Second Updates */}
+          {/* Live Market Indices */}
           <div className="flex items-center space-x-6">
             <div className="flex items-center space-x-2">
               <div
@@ -190,7 +212,7 @@ export default function TradingDashboard() {
               </span>
             </div>
 
-            {/* Market Indices in Single Line with Real-time Updates */}
+            {/* Market Indices in Single Line */}
             <div className="flex items-center space-x-6">
               {marketIndices.slice(0, 4).map((index, i) => (
                 <div key={`${index.symbol}-${i}`} className="flex items-center space-x-2">
@@ -237,7 +259,7 @@ export default function TradingDashboard() {
         {/* Real-time Update Indicator */}
         <div className="px-6 pb-2">
           <div className="flex items-center justify-between text-xs text-white/50">
-            <span>Real-time updates every 2 seconds • Indian Regional Market News</span>
+            <span>Real-time updates • NSE/BSE Stocks • Live Financial News • AI-powered Analytics</span>
             <span className="flex items-center space-x-1">
               <div className="h-1 w-1 rounded-full bg-green-500 animate-pulse"></div>
               <span>Live Data Stream Active</span>
@@ -249,6 +271,44 @@ export default function TradingDashboard() {
       <div className="flex gap-6 p-6">
         {/* Left Column */}
         <div className="flex-1 space-y-6">
+          {/* Enhanced Stock Selector */}
+          <Card className="border-indigo-500/20 bg-gradient-to-r from-indigo-900/40 to-indigo-800/40 backdrop-blur-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div className="flex items-center space-x-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/20">
+                  <Building2 className="h-5 w-5 text-indigo-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-white">Enhanced Stock Selector</CardTitle>
+                  <p className="text-sm text-white/70">Browse all NSE & BSE stocks with filters</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-400 border-indigo-500/30">
+                  {selectedStockData
+                    ? `${selectedStockData.sector} • ${selectedStockData.marketCap} Cap`
+                    : "Select Stock"}
+                </Badge>
+                <span className="text-sm text-white/70">Show</span>
+                <Switch checked={showStockSelector} onCheckedChange={setShowStockSelector} />
+                {showStockSelector ? (
+                  <ChevronUp className="h-4 w-4 text-white/70" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-white/70" />
+                )}
+              </div>
+            </CardHeader>
+            {showStockSelector && (
+              <CardContent>
+                <EnhancedStockSelector
+                  selectedStock={selectedStock}
+                  onStockSelect={handleStockSelect}
+                  onStockChange={handleStockChange}
+                />
+              </CardContent>
+            )}
+          </Card>
+
           {/* AI Probability Engine */}
           <Card className="border-blue-500/20 bg-gradient-to-r from-blue-900/40 to-blue-800/40 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
@@ -287,11 +347,11 @@ export default function TradingDashboard() {
                 </div>
                 <div>
                   <CardTitle className="text-white">Live Trading Chart</CardTitle>
-                  <p className="text-sm text-white/70">Real-time NSE data with advanced indicators</p>
+                  <p className="text-sm text-white/70">Real-time data with advanced indicators</p>
                 </div>
               </div>
               <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
-                LIVE NSE
+                LIVE API
               </Badge>
             </CardHeader>
             <CardContent>
@@ -323,24 +383,24 @@ export default function TradingDashboard() {
 
         {/* Right Sidebar */}
         <div className="w-80 space-y-6">
-          {/* Market Pulse */}
+          {/* Enhanced Financial News */}
           <Card className="border-orange-500/20 bg-gradient-to-r from-orange-900/40 to-orange-800/40 backdrop-blur-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <div className="flex items-center space-x-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/20">
-                  <Activity className="h-5 w-5 text-orange-400" />
+                  <Newspaper className="h-5 w-5 text-orange-400" />
                 </div>
                 <div>
-                  <CardTitle className="text-white">Market Pulse</CardTitle>
-                  <p className="text-sm text-white/70">Live news & market updates</p>
+                  <CardTitle className="text-white">Financial News Hub</CardTitle>
+                  <p className="text-sm text-white/70">Live news with sentiment analysis</p>
                 </div>
               </div>
               <Button variant="ghost" size="sm" className="text-white/70 hover:text-white">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent>
-              <NewsPanel />
+            <CardContent className="p-0">
+              <EnhancedNewsPanel />
             </CardContent>
           </Card>
 
