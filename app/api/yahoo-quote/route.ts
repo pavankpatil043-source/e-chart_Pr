@@ -17,7 +17,61 @@ interface StockQuote {
   lastUpdateTime: string
 }
 
-// Stock data storage for persistence
+// Real Yahoo Finance API integration
+async function fetchRealYahooData(symbol: string): Promise<StockQuote | null> {
+  try {
+    // Use Yahoo Finance API v8 (free tier)
+    const yahooSymbol = symbol.includes(".NS") ? symbol : `${symbol}.NS`
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Yahoo Finance API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const result = data.chart?.result?.[0]
+
+    if (!result) {
+      throw new Error("No data returned from Yahoo Finance")
+    }
+
+    const meta = result.meta
+    const quote = result.indicators?.quote?.[0]
+    const currentPrice = meta.regularMarketPrice || meta.previousClose || 0
+    const previousClose = meta.previousClose || currentPrice
+    const change = currentPrice - previousClose
+    const changePercent = (change / previousClose) * 100
+
+    return {
+      symbol: symbol.replace(".NS", ""),
+      companyName: meta.longName || meta.shortName || symbol,
+      price: Math.round(currentPrice * 100) / 100,
+      lastPrice: Math.round(currentPrice * 100) / 100,
+      change: Math.round(change * 100) / 100,
+      pChange: Math.round(changePercent * 100) / 100,
+      volume: meta.regularMarketVolume || 0,
+      marketCap: meta.marketCap || 0,
+      peRatio: meta.trailingPE || 0,
+      dayHigh: meta.regularMarketDayHigh || currentPrice,
+      dayLow: meta.regularMarketDayLow || currentPrice,
+      open: meta.regularMarketOpen || currentPrice,
+      previousClose: previousClose,
+      lastUpdateTime: new Date().toISOString(),
+    }
+  } catch (error) {
+    console.error(`Error fetching real data for ${symbol}:`, error)
+    return null
+  }
+}
+
+// Fallback simulated data with realistic movement
 const stockStorage = new Map<
   string,
   {
@@ -215,25 +269,42 @@ export async function GET(request: Request) {
       )
     }
 
+    // Try to fetch real data first
+    const realData = await fetchRealYahooData(symbol)
+
+    if (realData) {
+      return NextResponse.json({
+        success: true,
+        quote: realData,
+        timestamp: Date.now(),
+        source: "Yahoo Finance API",
+        marketStatus: "OPEN",
+      })
+    }
+
+    // Fallback to simulated data
     const quote = generateLivePrice(symbol)
 
     return NextResponse.json({
       success: true,
       quote,
       timestamp: Date.now(),
-      source: "Yahoo Finance Live Simulation",
+      source: "Simulated Data (Yahoo API unavailable)",
       marketStatus: "OPEN",
     })
   } catch (error) {
     console.error("Error fetching stock quote:", error)
 
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch stock data",
-        quote: null,
-      },
-      { status: 500 },
-    )
+    // Return simulated data on error
+    const symbol = new URL(request.url).searchParams.get("symbol") || "RELIANCE.NS"
+    const quote = generateLivePrice(symbol)
+
+    return NextResponse.json({
+      success: true,
+      quote,
+      timestamp: Date.now(),
+      source: "Simulated Data (Error fallback)",
+      marketStatus: "OPEN",
+    })
   }
 }

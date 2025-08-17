@@ -52,17 +52,17 @@ const POPULAR_STOCKS = [
 ]
 
 const TIMEFRAMES = [
-  { value: "1D", label: "1 Day" },
-  { value: "5D", label: "5 Days" },
-  { value: "1M", label: "1 Month" },
-  { value: "3M", label: "3 Months" },
-  { value: "6M", label: "6 Months" },
-  { value: "1Y", label: "1 Year" },
+  { value: "1d", label: "1 Day" },
+  { value: "5d", label: "5 Days" },
+  { value: "1mo", label: "1 Month" },
+  { value: "3mo", label: "3 Months" },
+  { value: "6mo", label: "6 Months" },
+  { value: "1y", label: "1 Year" },
 ]
 
 export function TradingViewChart() {
   const [selectedStock, setSelectedStock] = useState("RELIANCE.NS")
-  const [selectedTimeframe, setSelectedTimeframe] = useState("1D")
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1d")
   const [stockData, setStockData] = useState<StockData | null>(null)
   const [chartData, setChartData] = useState<ChartData[]>([])
   const [technicalIndicators, setTechnicalIndicators] = useState<TechnicalIndicator[]>([])
@@ -94,44 +94,38 @@ export function TradingViewChart() {
       low: livePrice.low || livePrice.price * 0.98,
       open: livePrice.open || livePrice.price * 0.999,
       previousClose: livePrice.price - livePrice.change,
-      companyName: company?.name || "Company",
+      companyName: livePrice.companyName || company?.name || "Company",
     })
   }
 
-  // Generate realistic chart data
-  const generateChartData = (symbol: string, timeframe: string): ChartData[] => {
-    const data: ChartData[] = []
-    const currentPrice = getPrice(symbol)?.price || 2387
-    let price = currentPrice
-    const now = Date.now()
+  // Fetch chart data from API
+  const fetchChartData = async (symbol: string, timeframe: string): Promise<ChartData[]> => {
+    try {
+      const response = await fetch(
+        `/api/yahoo-chart?symbol=${encodeURIComponent(symbol)}&range=${timeframe}&interval=5m`,
+        {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        },
+      )
 
-    const intervals = timeframe === "1D" ? 78 : timeframe === "5D" ? 390 : 1560
-    const timeStep = timeframe === "1D" ? 5 * 60 * 1000 : timeframe === "5D" ? 60 * 1000 : 15 * 60 * 1000
+      if (!response.ok) {
+        throw new Error(`Chart API error: ${response.status}`)
+      }
 
-    for (let i = 0; i < intervals; i++) {
-      const timestamp = now - (intervals - i) * timeStep
-      const volatility = currentPrice * 0.002
+      const data = await response.json()
 
-      const open = price
-      const change = (Math.random() - 0.5) * volatility * 2
-      const close = Math.max(currentPrice * 0.95, Math.min(currentPrice * 1.05, open + change))
-      const high = Math.max(open, close) + Math.random() * volatility * 0.5
-      const low = Math.min(open, close) - Math.random() * volatility * 0.5
-      const volume = Math.floor(Math.random() * 1000000) + 500000
+      if (data.success && data.data) {
+        return data.data
+      }
 
-      data.push({
-        timestamp,
-        open,
-        high,
-        low,
-        close,
-        volume,
-      })
-
-      price = close
+      return []
+    } catch (error) {
+      console.error(`Error fetching chart data for ${symbol}:`, error)
+      return []
     }
-
-    return data
   }
 
   // Calculate technical indicators
@@ -319,16 +313,26 @@ export function TradingViewChart() {
   useEffect(() => {
     if (selectedStock) {
       setLoading(true)
+      setError(null)
 
-      // Generate chart data
-      const newChartData = generateChartData(selectedStock, selectedTimeframe)
-      setChartData(newChartData)
-
-      // Calculate technical indicators
-      const indicators = calculateTechnicalIndicators(newChartData)
-      setTechnicalIndicators(indicators)
-
-      setLoading(false)
+      // Fetch chart data from API
+      fetchChartData(selectedStock, selectedTimeframe)
+        .then((data) => {
+          if (data.length > 0) {
+            setChartData(data)
+            const indicators = calculateTechnicalIndicators(data)
+            setTechnicalIndicators(indicators)
+          } else {
+            setError("No chart data available")
+          }
+        })
+        .catch((err) => {
+          console.error("Error loading chart data:", err)
+          setError("Failed to load chart data")
+        })
+        .finally(() => {
+          setLoading(false)
+        })
     }
   }, [selectedStock, selectedTimeframe])
 
@@ -415,7 +419,7 @@ export function TradingViewChart() {
 
           <Badge variant="secondary" className="bg-blue-500/20 text-blue-400 border-blue-500/30">
             <Activity className="h-3 w-3 mr-1 animate-pulse" />
-            LIVE NSE
+            LIVE API
           </Badge>
 
           {lastUpdate && <span className="text-xs text-white/50">Updated: {lastUpdate.toLocaleTimeString()}</span>}
@@ -488,6 +492,18 @@ export function TradingViewChart() {
         </Card>
       )}
 
+      {/* Error Display */}
+      {error && (
+        <Card className="bg-red-900/20 border-red-500/20">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2 text-red-400">
+              <RefreshCw className="h-4 w-4" />
+              <span>{error}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Advanced Chart with Tabs */}
       <Card className="bg-white/5 border-white/10">
         <CardHeader>
@@ -520,10 +536,19 @@ export function TradingViewChart() {
 
             <TabsContent value="chart" className="mt-4">
               <div className="space-y-4">
-                <canvas
-                  ref={chartRef}
-                  className="w-full h-96 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-lg border border-white/10"
-                />
+                {loading ? (
+                  <div className="w-full h-96 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-lg border border-white/10 flex items-center justify-center">
+                    <div className="flex items-center space-x-2 text-white/70">
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                      <span>Loading chart data...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <canvas
+                    ref={chartRef}
+                    className="w-full h-96 bg-gradient-to-br from-slate-800/50 to-slate-900/50 rounded-lg border border-white/10"
+                  />
+                )}
                 <div className="flex items-center justify-center space-x-6 text-xs text-white/70">
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-1 bg-blue-500"></div>
@@ -614,7 +639,7 @@ export function TradingViewChart() {
                       <Badge className="bg-red-500/20 text-red-400 border-red-500/30 animate-pulse">UPDATING</Badge>
                     </div>
                     <div className="space-y-2 text-sm text-white/80">
-                      <p>🔴 Live price updates every 2 seconds from NSE/BSE feeds</p>
+                      <p>🔴 Live price updates every 2 seconds from Yahoo Finance API</p>
                       <p>📊 Real-time technical indicators with automatic recalculation</p>
                       <p>📈 Dynamic support/resistance levels based on live price action</p>
                       <p>⚡ Instant signal generation for entry/exit points</p>

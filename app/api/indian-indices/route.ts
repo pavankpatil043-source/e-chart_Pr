@@ -11,116 +11,165 @@ interface MarketIndex {
   source: string
 }
 
-// Persistent price storage with realistic movement
-const priceStorage = new Map<string, { basePrice: number; lastUpdate: number; trend: number }>()
+// Real NSE indices data fetching
+async function fetchRealIndicesData(): Promise<MarketIndex[]> {
+  try {
+    // Try multiple data sources for Indian indices
+    const indices = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
+    const results: MarketIndex[] = []
 
-// Initialize base prices
-const initializePrices = () => {
-  if (priceStorage.size === 0) {
-    priceStorage.set("NIFTY", { basePrice: 24781.1, lastUpdate: Date.now(), trend: 0.5 })
-    priceStorage.set("BANKNIFTY", { basePrice: 51667.75, lastUpdate: Date.now(), trend: -0.3 })
-    priceStorage.set("FINNIFTY", { basePrice: 23456.8, lastUpdate: Date.now(), trend: 0.4 })
-    priceStorage.set("SENSEX", { basePrice: 82365.77, lastUpdate: Date.now(), trend: 0.2 })
+    for (const index of indices) {
+      try {
+        // Use Yahoo Finance for Indian indices
+        const yahooSymbol = index === "SENSEX" ? "^BSESN" : `^${index}`
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`
+
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const result = data.chart?.result?.[0]
+
+          if (result) {
+            const meta = result.meta
+            const currentPrice = meta.regularMarketPrice || meta.previousClose || 0
+            const previousClose = meta.previousClose || currentPrice
+            const change = currentPrice - previousClose
+            const changePercent = (change / previousClose) * 100
+
+            results.push({
+              symbol: index,
+              name: getIndexName(index),
+              price: Math.round(currentPrice * 100) / 100,
+              change: Math.round(change * 100) / 100,
+              pChange: Math.round(changePercent * 100) / 100,
+              isPositive: change >= 0,
+              lastUpdate: Date.now(),
+              source: "Yahoo Finance API",
+            })
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching ${index}:`, error)
+      }
+    }
+
+    return results
+  } catch (error) {
+    console.error("Error fetching real indices data:", error)
+    return []
   }
 }
 
-const generateRealisticPrice = (symbol: string): { price: number; change: number; pChange: number } => {
-  initializePrices()
-
-  const stored = priceStorage.get(symbol)
-  if (!stored) {
-    return { price: 0, change: 0, pChange: 0 }
+function getIndexName(symbol: string): string {
+  const names: { [key: string]: string } = {
+    NIFTY: "Nifty 50",
+    BANKNIFTY: "Bank Nifty",
+    FINNIFTY: "Fin Nifty",
+    SENSEX: "Sensex",
   }
+  return names[symbol] || symbol
+}
 
-  const now = Date.now()
-  const timeDiff = now - stored.lastUpdate
+// Fallback simulated data with realistic movement
+const indicesStorage = new Map<string, { basePrice: number; lastUpdate: number; trend: number }>()
 
-  // Generate realistic price movement
-  const volatility = symbol === "BANKNIFTY" ? 0.002 : 0.001 // Bank Nifty more volatile
-  const randomFactor = (Math.random() - 0.5) * 2 // -1 to 1
-  const trendFactor = stored.trend * 0.3 // Trend influence
-  const timeDecay = Math.min(timeDiff / (1000 * 60 * 60), 1) // Max 1 hour effect
+function generateSimulatedIndices(): MarketIndex[] {
+  const indices = [
+    { symbol: "NIFTY", name: "Nifty 50", basePrice: 24781.1 },
+    { symbol: "BANKNIFTY", name: "Bank Nifty", basePrice: 51667.75 },
+    { symbol: "FINNIFTY", name: "Fin Nifty", basePrice: 23456.8 },
+    { symbol: "SENSEX", name: "Sensex", basePrice: 82365.77 },
+  ]
 
-  const priceChange = stored.basePrice * volatility * (randomFactor + trendFactor) * timeDecay
-  const newPrice = stored.basePrice + priceChange
+  return indices.map((index) => {
+    if (!indicesStorage.has(index.symbol)) {
+      indicesStorage.set(index.symbol, {
+        basePrice: index.basePrice,
+        lastUpdate: Date.now(),
+        trend: Math.random() > 0.5 ? 1 : -1,
+      })
+    }
 
-  // Update stored values
-  const change = newPrice - stored.basePrice
-  const pChange = (change / stored.basePrice) * 100
+    const stored = indicesStorage.get(index.symbol)!
+    const now = Date.now()
+    const timeDiff = now - stored.lastUpdate
 
-  // Update trend based on recent movement
-  const newTrend = stored.trend * 0.9 + (change > 0 ? 0.1 : -0.1)
-  priceStorage.set(symbol, {
-    basePrice: newPrice,
-    lastUpdate: now,
-    trend: Math.max(-1, Math.min(1, newTrend)),
+    // Generate realistic movement
+    const volatility = 0.001 // 0.1% volatility
+    const randomFactor = (Math.random() - 0.5) * 2
+    const trendFactor = stored.trend * 0.3
+    const timeDecay = Math.min(timeDiff / (1000 * 60), 1)
+
+    const priceChange = stored.basePrice * volatility * (randomFactor + trendFactor) * timeDecay
+    const newPrice = Math.max(stored.basePrice + priceChange, stored.basePrice * 0.98)
+    const change = newPrice - stored.basePrice
+    const changePercent = (change / stored.basePrice) * 100
+
+    // Update trend occasionally
+    if (Math.random() < 0.05) {
+      stored.trend = Math.random() > 0.5 ? 1 : -1
+    }
+
+    // Update stored price
+    stored.basePrice = newPrice
+    stored.lastUpdate = now
+
+    return {
+      symbol: index.symbol,
+      name: index.name,
+      price: Math.round(newPrice * 100) / 100,
+      change: Math.round(change * 100) / 100,
+      pChange: Math.round(changePercent * 100) / 100,
+      isPositive: change >= 0,
+      lastUpdate: now,
+      source: "Simulated Data",
+    }
   })
-
-  return {
-    price: Math.round(newPrice * 100) / 100,
-    change: Math.round(change * 100) / 100,
-    pChange: Math.round(pChange * 100) / 100,
-  }
 }
 
 export async function GET() {
   try {
-    const indices: MarketIndex[] = [
-      {
-        symbol: "NIFTY",
-        name: "Nifty 50",
-        ...generateRealisticPrice("NIFTY"),
-        isPositive: true,
-        lastUpdate: Date.now(),
-        source: "NSE Live Simulation",
-      },
-      {
-        symbol: "BANKNIFTY",
-        name: "Bank Nifty",
-        ...generateRealisticPrice("BANKNIFTY"),
-        isPositive: false,
-        lastUpdate: Date.now(),
-        source: "NSE Live Simulation",
-      },
-      {
-        symbol: "FINNIFTY",
-        name: "Fin Nifty",
-        ...generateRealisticPrice("FINNIFTY"),
-        isPositive: true,
-        lastUpdate: Date.now(),
-        source: "NSE Live Simulation",
-      },
-      {
-        symbol: "SENSEX",
-        name: "Sensex",
-        ...generateRealisticPrice("SENSEX"),
-        isPositive: true,
-        lastUpdate: Date.now(),
-        source: "NSE Live Simulation",
-      },
-    ]
+    // Try to fetch real data first
+    const realData = await fetchRealIndicesData()
 
-    // Update isPositive based on actual change
-    indices.forEach((index) => {
-      index.isPositive = index.change >= 0
-    })
+    if (realData.length > 0) {
+      return NextResponse.json({
+        success: true,
+        indices: realData,
+        timestamp: Date.now(),
+        source: "Yahoo Finance API",
+        count: realData.length,
+      })
+    }
+
+    // Fallback to simulated data
+    const simulatedData = generateSimulatedIndices()
 
     return NextResponse.json({
       success: true,
-      indices,
+      indices: simulatedData,
       timestamp: Date.now(),
-      source: "NSE Live Simulation Engine",
+      source: "Simulated Data (Yahoo API unavailable)",
+      count: simulatedData.length,
     })
   } catch (error) {
-    console.error("Error generating market indices:", error)
+    console.error("Error fetching market indices:", error)
 
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to generate market data",
-        indices: [],
-      },
-      { status: 500 },
-    )
+    // Return simulated data on error
+    const simulatedData = generateSimulatedIndices()
+
+    return NextResponse.json({
+      success: true,
+      indices: simulatedData,
+      timestamp: Date.now(),
+      source: "Simulated Data (Error fallback)",
+      count: simulatedData.length,
+    })
   }
 }
