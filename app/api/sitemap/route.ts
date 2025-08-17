@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+  const currentDate = new Date().toISOString()
 
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -11,127 +12,135 @@ export async function GET(request: NextRequest) {
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
         xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
   
-  <!-- Homepage -->
+  &lt;!-- Homepage -->
   <url>
     <loc>${baseUrl}</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Trading Dashboard -->
+  &lt;!-- Trading Dashboard -->
   <url>
     <loc>${baseUrl}/dashboard</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.9</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Market Analysis -->
+  &lt;!-- Market Analysis -->
   <url>
     <loc>${baseUrl}/analysis</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.8</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Portfolio -->
+  &lt;!-- Portfolio -->
   <url>
     <loc>${baseUrl}/portfolio</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- News -->
+  &lt;!-- News -->
   <url>
     <loc>${baseUrl}/news</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.7</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- AI Chat -->
+  &lt;!-- AI Chat -->
   <url>
     <loc>${baseUrl}/chat</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Market Indices -->
+  &lt;!-- Market Indices -->
   <url>
     <loc>${baseUrl}/indices</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.7</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Stocks -->
+  &lt;!-- Stocks -->
   <url>
     <loc>${baseUrl}/stocks</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.7</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Technical Analysis -->
+  &lt;!-- Technical Analysis -->
   <url>
     <loc>${baseUrl}/technical</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Settings -->
+  &lt;!-- Settings -->
   <url>
     <loc>${baseUrl}/settings</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.4</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- About -->
+  &lt;!-- About -->
   <url>
     <loc>${baseUrl}/about</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>
     <mobile:mobile/>
   </url>
   
-  <!-- Privacy Policy -->
+  &lt;!-- Privacy Policy -->
   <url>
     <loc>${baseUrl}/privacy</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.2</priority>
   </url>
   
-  <!-- Terms of Service -->
+  &lt;!-- Terms of Service -->
   <url>
     <loc>${baseUrl}/terms</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.2</priority>
   </url>
   
-  <!-- API Documentation -->
+  &lt;!-- API Documentation -->
   <url>
     <loc>${baseUrl}/api/docs</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
+    <lastmod>${currentDate}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.5</priority>
+  </url>
+  
+  &lt;!-- Health Check -->
+  <url>
+    <loc>${baseUrl}/api/health</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.1</priority>
   </url>
   
 </urlset>`

@@ -2,8 +2,11 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+  const environment = process.env.NODE_ENV || "development"
 
   const robots = `# EChart Trading Platform - Robots.txt
+# Environment: ${environment}
+# Generated: ${new Date().toISOString()}
 # https://echart.in
 
 User-agent: *
