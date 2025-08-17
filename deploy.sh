@@ -1,40 +1,39 @@
 #!/bin/bash
 
-# ECHART.CO.IN Deployment Script
-# Make sure to run: chmod +x deploy.sh
+# ECHART.IN Deployment Script
+# Make sure you have Vercel CLI installed: npm i -g vercel
 
-echo "🚀 Starting deployment to echart.co.in..."
+echo "🚀 Starting deployment to echart.in..."
 
-# Check if we're in the right directory
-if [ ! -f "package.json" ]; then
-    echo "❌ Error: package.json not found. Make sure you're in the project root directory."
-    exit 1
+# Check if Vercel CLI is installed
+if ! command -v vercel &> /dev/null; then
+    echo "❌ Vercel CLI not found. Installing..."
+    npm install -g vercel
 fi
-
-# Install dependencies
-echo "📦 Installing dependencies..."
-npm install
-
-# Run type checking
-echo "🔍 Running type checks..."
-npm run type-check
 
 # Build the application
-echo "🏗️ Building application..."
+echo "📦 Building application..."
 npm run build
 
-# Check if build was successful
-if [ $? -eq 0 ]; then
-    echo "✅ Build successful!"
-else
-    echo "❌ Build failed!"
+if [ $? -ne 0 ]; then
+    echo "❌ Build failed. Please fix the errors and try again."
     exit 1
 fi
 
-echo "🎉 Ready for deployment!"
-echo ""
-echo "Next steps:"
-echo "1. Push to GitHub: git push origin main"
-echo "2. Deploy to Vercel: vercel --prod"
-echo "3. Configure custom domain in Vercel dashboard"
-echo ""
+# Deploy to Vercel
+echo "🌐 Deploying to Vercel..."
+vercel --prod
+
+if [ $? -eq 0 ]; then
+    echo "✅ Deployment successful!"
+    echo "🎉 Your trading platform is now live at https://echart.in"
+    echo ""
+    echo "Next steps:"
+    echo "1. Configure your custom domain in Vercel dashboard"
+    echo "2. Update DNS records for echart.in"
+    echo "3. Set up SSL certificate (automatic with Vercel)"
+    echo ""
+else
+    echo "❌ Deployment failed. Please check the errors above."
+    exit 1
+fi

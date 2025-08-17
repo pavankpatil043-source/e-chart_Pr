@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "name": "echart-trading-platform",
   "builds": [
     {
       "src": "package.json",
@@ -12,16 +13,40 @@
       "dest": "/api/$1"
     },
     {
+      "src": "/sitemap.xml",
+      "dest": "/api/sitemap"
+    },
+    {
+      "src": "/robots.txt",
+      "dest": "/api/robots"
+    },
+    {
       "src": "/(.*)",
       "dest": "/$1"
     }
   ],
   "env": {
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "NEXT_PUBLIC_APP_URL": "https://echart.in",
+    "NEXT_PUBLIC_DOMAIN": "echart.in"
+  },
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    }
   },
   "functions": {
     "app/api/*/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "app/api/chat/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "app/api/websocket/route.ts": {
+      "maxDuration": 300,
+      "memory": 512
     }
   },
   "headers": [
@@ -39,8 +64,60 @@
         {
           "key": "Access-Control-Allow-Headers",
           "value": "Content-Type, Authorization"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=300"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "origin-when-cross-origin"
+        },
+        {
+          "key": "X-DNS-Prefetch-Control",
+          "value": "on"
+        }
+      ]
+    },
+    {
+      "source": "/static/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
         }
       ]
     }
-  ]
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/home",
+      "destination": "/",
+      "permanent": true
+    }
+  ],
+  "trailingSlash": false,
+  "cleanUrls": true,
+  "github": {
+    "enabled": false
+  }
 }
