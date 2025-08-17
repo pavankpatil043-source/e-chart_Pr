@@ -10,8 +10,9 @@ interface HealthStatus {
     database: "connected" | "disconnected" | "unknown"
     redis: "connected" | "disconnected" | "unknown"
     external_apis: {
+      nse: "available" | "unavailable" | "unknown"
       yahoo_finance: "available" | "unavailable" | "unknown"
-      nse_api: "available" | "unavailable" | "unknown"
+      alpha_vantage: "available" | "unavailable" | "unknown"
     }
   }
   system: {
@@ -29,12 +30,6 @@ interface HealthStatus {
       percentage: number
     }
   }
-  features: {
-    live_data: boolean
-    ai_chat: boolean
-    notifications: boolean
-    portfolio: boolean
-  }
   performance: {
     response_time: number
     requests_per_minute: number
@@ -42,9 +37,35 @@ interface HealthStatus {
   }
 }
 
-// Simulate system metrics (in production, use actual system monitoring)
+// Cache for performance metrics
+let performanceCache = {
+  requests: 0,
+  errors: 0,
+  lastReset: Date.now(),
+}
+
+// Helper function to check external API status
+async function checkExternalAPI(url: string, timeout = 5000): Promise<"available" | "unavailable"> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+    return response.ok ? "available" : "unavailable"
+  } catch (error) {
+    return "unavailable"
+  }
+}
+
+// Helper function to get system metrics
 function getSystemMetrics() {
   const memoryUsage = process.memoryUsage()
+  const cpuUsage = process.cpuUsage()
 
   return {
     memory: {
@@ -53,148 +74,89 @@ function getSystemMetrics() {
       percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
     },
     cpu: {
-      usage: Math.round(Math.random() * 100), // Simulated CPU usage
+      usage: Math.round((cpuUsage.user + cpuUsage.system) / 1000000), // Convert to percentage approximation
     },
     disk: {
-      used: 1024, // Simulated disk usage in MB
-      total: 10240, // Simulated total disk in MB
-      percentage: 10,
+      used: 0, // Would need additional library for disk usage
+      total: 0,
+      percentage: 0,
     },
   }
 }
 
-// Check external API availability
-async function checkExternalAPIs() {
-  const apis = {
-    yahoo_finance: "unknown" as const,
-    nse_api: "unknown" as const,
-  }
-
-  try {
-    // Check Yahoo Finance API (simulated)
-    const yahooResponse = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS", {
-      method: "HEAD",
-      signal: AbortSignal.timeout(5000),
-    })
-    apis.yahoo_finance = yahooResponse.ok ? "available" : "unavailable"
-  } catch {
-    apis.yahoo_finance = "unavailable"
-  }
-
-  try {
-    // Check NSE API availability (simulated)
-    // In production, replace with actual NSE API endpoint
-    apis.nse_api = "available" // Simulated as available
-  } catch {
-    apis.nse_api = "unavailable"
-  }
-
-  return apis
-}
-
-// Check database connectivity
-async function checkDatabase() {
-  try {
-    // In production, implement actual database health check
-    // Example: await db.raw('SELECT 1')
-    return "connected" as const
-  } catch {
-    return "disconnected" as const
-  }
-}
-
-// Check Redis connectivity
-async function checkRedis() {
-  try {
-    // In production, implement actual Redis health check
-    // Example: await redis.ping()
-    return "connected" as const
-  } catch {
-    return "disconnected" as const
-  }
-}
-
-// Get feature flags from environment
-function getFeatureFlags() {
-  return {
-    live_data: process.env.NEXT_PUBLIC_ENABLE_LIVE_DATA === "true",
-    ai_chat: process.env.NEXT_PUBLIC_ENABLE_AI_CHAT === "true",
-    notifications: process.env.NEXT_PUBLIC_ENABLE_NOTIFICATIONS === "true",
-    portfolio: process.env.NEXT_PUBLIC_ENABLE_PORTFOLIO === "true",
-  }
-}
-
-// Calculate performance metrics
+// Helper function to calculate performance metrics
 function getPerformanceMetrics() {
+  const now = Date.now()
+  const timeDiff = now - performanceCache.lastReset
+  const minutesDiff = timeDiff / (1000 * 60)
+
+  // Reset cache every hour
+  if (timeDiff > 3600000) {
+    performanceCache = {
+      requests: 0,
+      errors: 0,
+      lastReset: now,
+    }
+  }
+
   return {
-    response_time: Math.round(Math.random() * 100 + 50), // Simulated response time in ms
-    requests_per_minute: Math.round(Math.random() * 1000 + 100), // Simulated RPM
-    error_rate: Math.round(Math.random() * 5), // Simulated error rate percentage
+    response_time: Math.random() * 100 + 50, // Simulated response time
+    requests_per_minute: minutesDiff > 0 ? Math.round(performanceCache.requests / minutesDiff) : 0,
+    error_rate: performanceCache.requests > 0 ? (performanceCache.errors / performanceCache.requests) * 100 : 0,
   }
-}
-
-// Determine overall health status
-function determineHealthStatus(
-  services: HealthStatus["services"],
-  system: HealthStatus["system"],
-): HealthStatus["status"] {
-  // Check if any critical services are down
-  if (services.database === "disconnected") {
-    return "unhealthy"
-  }
-
-  // Check system resources
-  if (system.memory.percentage > 90 || system.cpu.usage > 95) {
-    return "degraded"
-  }
-
-  // Check external APIs
-  const externalApisDown = Object.values(services.external_apis).filter((status) => status === "unavailable").length
-  if (externalApisDown >= 2) {
-    return "degraded"
-  }
-
-  return "healthy"
 }
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now()
 
   try {
-    // Gather all health information
-    const [externalAPIs, databaseStatus, redisStatus] = await Promise.all([
-      checkExternalAPIs(),
-      checkDatabase(),
-      checkRedis(),
+    // Increment request counter
+    performanceCache.requests++
+
+    // Check external APIs in parallel
+    const [nseStatus, yahooStatus, alphaVantageStatus] = await Promise.allSettled([
+      checkExternalAPI("https://www.nseindia.com"),
+      checkExternalAPI("https://finance.yahoo.com"),
+      checkExternalAPI("https://www.alphavantage.co"),
     ])
 
+    // Get system metrics
     const systemMetrics = getSystemMetrics()
-    const featureFlags = getFeatureFlags()
     const performanceMetrics = getPerformanceMetrics()
 
-    const services = {
-      database: databaseStatus,
-      redis: redisStatus,
-      external_apis: externalAPIs,
-    }
+    // Determine overall health status
+    const externalAPIsHealthy =
+      [nseStatus, yahooStatus, alphaVantageStatus].filter(
+        (result) => result.status === "fulfilled" && result.value === "available",
+      ).length >= 2
+
+    const memoryHealthy = systemMetrics.memory.percentage < 90
+    const overallHealthy = externalAPIsHealthy && memoryHealthy
 
     const healthStatus: HealthStatus = {
-      status: determineHealthStatus(services, systemMetrics),
+      status: overallHealthy ? "healthy" : "degraded",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
+      uptime: Math.floor(process.uptime()),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
-      services,
+      services: {
+        database: "unknown", // Would check actual database connection
+        redis: "unknown", // Would check actual Redis connection
+        external_apis: {
+          nse: nseStatus.status === "fulfilled" ? nseStatus.value : "unknown",
+          yahoo_finance: yahooStatus.status === "fulfilled" ? yahooStatus.value : "unknown",
+          alpha_vantage: alphaVantageStatus.status === "fulfilled" ? alphaVantageStatus.value : "unknown",
+        },
+      },
       system: systemMetrics,
-      features: featureFlags,
       performance: {
         ...performanceMetrics,
         response_time: Date.now() - startTime,
       },
     }
 
-    // Set appropriate HTTP status code based on health
-    const statusCode = healthStatus.status === "healthy" ? 200 : healthStatus.status === "degraded" ? 200 : 503
+    // Return appropriate status code
+    const statusCode = healthStatus.status === "healthy" ? 200 : healthStatus.status === "degraded" ? 207 : 503
 
     return NextResponse.json(healthStatus, {
       status: statusCode,
@@ -205,20 +167,21 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Health check failed:", error)
+    performanceCache.errors++
 
-    const errorHealthStatus: HealthStatus = {
+    const errorStatus: HealthStatus = {
       status: "unhealthy",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
+      uptime: Math.floor(process.uptime()),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
       services: {
         database: "unknown",
         redis: "unknown",
         external_apis: {
+          nse: "unknown",
           yahoo_finance: "unknown",
-          nse_api: "unknown",
+          alpha_vantage: "unknown",
         },
       },
       system: {
@@ -226,7 +189,6 @@ export async function GET(request: NextRequest) {
         cpu: { usage: 0 },
         disk: { used: 0, total: 0, percentage: 0 },
       },
-      features: getFeatureFlags(),
       performance: {
         response_time: Date.now() - startTime,
         requests_per_minute: 0,
@@ -234,7 +196,7 @@ export async function GET(request: NextRequest) {
       },
     }
 
-    return NextResponse.json(errorHealthStatus, {
+    return NextResponse.json(errorStatus, {
       status: 503,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -246,17 +208,10 @@ export async function GET(request: NextRequest) {
 }
 
 // Handle HEAD requests for simple health checks
-export async function HEAD() {
+export async function HEAD(request: NextRequest) {
   try {
-    const systemMetrics = getSystemMetrics()
-
-    // Simple health check - just verify the service is responding
-    if (systemMetrics.memory.percentage < 95) {
-      return new NextResponse(null, { status: 200 })
-    } else {
-      return new NextResponse(null, { status: 503 })
-    }
-  } catch {
+    return new NextResponse(null, { status: 200 })
+  } catch (error) {
     return new NextResponse(null, { status: 503 })
   }
 }

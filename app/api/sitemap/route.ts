@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 
 interface SitemapUrl {
   loc: string
@@ -7,11 +7,11 @@ interface SitemapUrl {
   priority: number
 }
 
-// Define all the pages in your application
+// Static pages configuration
 const staticPages: Omit<SitemapUrl, "lastmod">[] = [
   {
     loc: "/",
-    changefreq: "daily",
+    changefreq: "hourly",
     priority: 1.0,
   },
   {
@@ -36,17 +36,12 @@ const staticPages: Omit<SitemapUrl, "lastmod">[] = [
   },
   {
     loc: "/help",
-    changefreq: "monthly",
+    changefreq: "weekly",
     priority: 0.6,
-  },
-  {
-    loc: "/api/health",
-    changefreq: "daily",
-    priority: 0.1,
   },
 ]
 
-// Popular Indian stock symbols for dynamic pages
+// Popular Indian stocks for dynamic content
 const popularStocks = [
   "RELIANCE",
   "TCS",
@@ -64,24 +59,27 @@ const popularStocks = [
   "AXISBANK",
   "LT",
   "TITAN",
-  "NESTLEIND",
   "ULTRACEMCO",
   "WIPRO",
-  "ONGC",
+  "NESTLEIND",
+  "POWERGRID",
 ]
 
-// Indian market indices
+// Market sectors
+const sectors = ["banking", "it", "pharma", "auto", "fmcg", "energy", "metals", "realty", "telecom", "infrastructure"]
+
+// Market indices
 const indices = [
-  "NIFTY50",
-  "SENSEX",
-  "NIFTYBANK",
-  "NIFTYNEXT50",
-  "NIFTYIT",
-  "NIFTYFMCG",
-  "NIFTYPHARMA",
-  "NIFTYAUTO",
-  "NIFTYMETAL",
-  "NIFTYREALTY",
+  "nifty50",
+  "sensex",
+  "niftybank",
+  "niftynext50",
+  "niftyit",
+  "niftypharma",
+  "niftyauto",
+  "niftyfmcg",
+  "niftyenergy",
+  "niftymetal",
 ]
 
 function generateSitemapXML(urls: SitemapUrl[]): string {
@@ -110,144 +108,107 @@ ${urlElements}
 </urlset>`
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const currentDate = new Date().toISOString()
+    const urls: SitemapUrl[] = []
 
-    // Combine static pages with dynamic content
-    const allUrls: SitemapUrl[] = [
-      // Static pages
-      ...staticPages.map((page) => ({
+    // Add static pages
+    staticPages.forEach((page) => {
+      urls.push({
         ...page,
         lastmod: currentDate,
-      })),
+      })
+    })
 
-      // Dynamic stock pages
-      ...popularStocks.map((symbol) => ({
-        loc: `/stock/${symbol}`,
+    // Add stock pages
+    popularStocks.forEach((stock) => {
+      urls.push({
+        loc: `/stocks/${stock.toLowerCase()}`,
         lastmod: currentDate,
-        changefreq: "hourly" as const,
+        changefreq: "hourly",
         priority: 0.9,
-      })),
+      })
+    })
 
-      // Index pages
-      ...indices.map((index) => ({
-        loc: `/index/${index}`,
-        lastmod: currentDate,
-        changefreq: "hourly" as const,
-        priority: 0.8,
-      })),
-
-      // Sector pages
-      {
-        loc: "/sectors/banking",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-      {
-        loc: "/sectors/it",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-      {
-        loc: "/sectors/pharma",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-      {
-        loc: "/sectors/auto",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-      {
-        loc: "/sectors/fmcg",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-
-      // Analysis pages
-      {
-        loc: "/analysis/technical",
+    // Add sector pages
+    sectors.forEach((sector) => {
+      urls.push({
+        loc: `/sectors/${sector}`,
         lastmod: currentDate,
         changefreq: "daily",
         priority: 0.8,
-      },
-      {
-        loc: "/analysis/fundamental",
+      })
+    })
+
+    // Add index pages
+    indices.forEach((index) => {
+      urls.push({
+        loc: `/indices/${index}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.9,
+      })
+    })
+
+    // Add trading tools pages
+    const tradingTools = [
+      "portfolio",
+      "watchlist",
+      "screener",
+      "calculator",
+      "technical-analysis",
+      "fundamental-analysis",
+      "news",
+      "alerts",
+    ]
+
+    tradingTools.forEach((tool) => {
+      urls.push({
+        loc: `/tools/${tool}`,
         lastmod: currentDate,
         changefreq: "weekly",
         priority: 0.7,
-      },
-      {
-        loc: "/analysis/market-trends",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.8,
-      },
+      })
+    })
 
-      // News pages
-      {
-        loc: "/news",
-        lastmod: currentDate,
-        changefreq: "hourly",
-        priority: 0.9,
-      },
-      {
-        loc: "/news/market",
-        lastmod: currentDate,
-        changefreq: "hourly",
-        priority: 0.8,
-      },
-      {
-        loc: "/news/economy",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
+    // Add educational content pages
+    const educationalPages = [
+      "learn/basics",
+      "learn/technical-analysis",
+      "learn/fundamental-analysis",
+      "learn/options",
+      "learn/derivatives",
+      "learn/mutual-funds",
+      "learn/ipo",
+      "learn/bonds",
+      "learn/commodities",
+    ]
 
-      // Tools pages
-      {
-        loc: "/tools/calculator",
+    educationalPages.forEach((page) => {
+      urls.push({
+        loc: `/${page}`,
         lastmod: currentDate,
         changefreq: "monthly",
         priority: 0.6,
-      },
-      {
-        loc: "/tools/screener",
-        lastmod: currentDate,
-        changefreq: "weekly",
-        priority: 0.8,
-      },
-      {
-        loc: "/tools/portfolio",
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.9,
-      },
-    ]
+      })
+    })
 
-    // Sort URLs by priority (highest first)
-    allUrls.sort((a, b) => b.priority - a.priority)
-
-    const sitemapXML = generateSitemapXML(allUrls)
+    // Generate XML
+    const sitemapXML = generateSitemapXML(urls)
 
     return new NextResponse(sitemapXML, {
       status: 200,
       headers: {
         "Content-Type": "application/xml",
-        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400", // Cache for 1 hour
+        "Cache-Control": "public, max-age=3600, s-maxage=3600", // Cache for 1 hour
         "X-Robots-Tag": "noindex", // Don't index the sitemap itself
       },
     })
   } catch (error) {
     console.error("Error generating sitemap:", error)
 
-    // Return a minimal sitemap in case of error
+    // Return minimal sitemap on error
     const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -262,7 +223,7 @@ export async function GET() {
       status: 200,
       headers: {
         "Content-Type": "application/xml",
-        "Cache-Control": "public, max-age=300", // Shorter cache for error case
+        "Cache-Control": "public, max-age=300, s-maxage=300", // Shorter cache on error
       },
     })
   }

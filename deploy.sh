@@ -16,8 +16,7 @@ NC='\033[0m' # No Color
 # Configuration
 PROJECT_NAME="echart-trading-platform"
 DOMAIN="echart.in"
-STAGING_DOMAIN="staging.echart.in"
-DOCKER_IMAGE="echart/trading-platform"
+ENVIRONMENT=${1:-production}
 
 # Functions
 log_info() {
@@ -36,88 +35,168 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-check_dependencies() {
-    log_info "Checking dependencies..."
+# Check prerequisites
+check_prerequisites() {
+    log_info "Checking prerequisites..."
     
-    # Check Node.js
+    # Check if Node.js is installed
     if ! command -v node &> /dev/null; then
-        log_error "Node.js is not installed"
+        log_error "Node.js is not installed. Please install Node.js 18 or higher."
         exit 1
     fi
     
-    # Check npm
+    # Check Node.js version
+    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [ "$NODE_VERSION" -lt 18 ]; then
+        log_error "Node.js version 18 or higher is required. Current version: $(node -v)"
+        exit 1
+    fi
+    
+    # Check if npm is installed
     if ! command -v npm &> /dev/null; then
-        log_error "npm is not installed"
+        log_error "npm is not installed."
         exit 1
     fi
     
-    # Check Vercel CLI
+    log_success "Prerequisites check passed"
+}
+
+# Install dependencies
+install_dependencies() {
+    log_info "Installing dependencies..."
+    
+    # Clean install
+    rm -rf node_modules package-lock.json
+    npm install
+    
+    log_success "Dependencies installed successfully"
+}
+
+# Run tests
+run_tests() {
+    log_info "Running tests..."
+    
+    # Type checking
+    npm run type-check
+    
+    # Linting
+    npm run lint
+    
+    log_success "All tests passed"
+}
+
+# Build application
+build_application() {
+    log_info "Building application for $ENVIRONMENT..."
+    
+    # Set environment variables
+    export NODE_ENV=$ENVIRONMENT
+    export NEXT_TELEMETRY_DISABLED=1
+    
+    # Clean previous build
+    npm run clean
+    
+    # Build
+    npm run build
+    
+    log_success "Application built successfully"
+}
+
+# Deploy to Vercel
+deploy_vercel() {
+    log_info "Deploying to Vercel..."
+    
+    # Check if Vercel CLI is installed
     if ! command -v vercel &> /dev/null; then
         log_warning "Vercel CLI not found. Installing..."
         npm install -g vercel
     fi
     
-    log_success "All dependencies are available"
-}
-
-install_dependencies() {
-    log_info "Installing project dependencies..."
-    npm ci
-    log_success "Dependencies installed successfully"
-}
-
-run_tests() {
-    log_info "Running tests..."
-    npm run lint
-    npm run type-check
-    log_success "All tests passed"
-}
-
-build_application() {
-    log_info "Building application..."
-    npm run build
-    log_success "Application built successfully"
-}
-
-deploy_to_vercel() {
-    local environment=$1
-    log_info "Deploying to Vercel ($environment)..."
-    
-    if [ "$environment" = "production" ]; then
+    # Deploy based on environment
+    if [ "$ENVIRONMENT" = "production" ]; then
         vercel --prod --yes
-        log_success "Deployed to production: https://$DOMAIN"
     else
         vercel --yes
-        log_success "Deployed to preview environment"
     fi
+    
+    log_success "Deployed to Vercel successfully"
 }
 
-deploy_with_docker() {
-    local environment=$1
-    log_info "Building Docker image..."
+# Deploy with Docker
+deploy_docker() {
+    log_info "Deploying with Docker..."
     
     # Build Docker image
-    docker build -t $DOCKER_IMAGE:$environment .
+    docker build -t $PROJECT_NAME:$ENVIRONMENT .
     
-    # Tag for registry
-    docker tag $DOCKER_IMAGE:$environment $DOCKER_IMAGE:latest
+    # Stop existing container
+    docker stop $PROJECT_NAME-$ENVIRONMENT 2>/dev/null || true
+    docker rm $PROJECT_NAME-$ENVIRONMENT 2>/dev/null || true
     
-    log_success "Docker image built successfully"
+    # Run new container
+    docker run -d \
+        --name $PROJECT_NAME-$ENVIRONMENT \
+        --restart unless-stopped \
+        -p 3000:3000 \
+        -e NODE_ENV=$ENVIRONMENT \
+        $PROJECT_NAME:$ENVIRONMENT
     
-    # Push to registry (if configured)
-    if [ ! -z "$DOCKER_REGISTRY" ]; then
-        log_info "Pushing to Docker registry..."
-        docker push $DOCKER_IMAGE:$environment
-        docker push $DOCKER_IMAGE:latest
-        log_success "Image pushed to registry"
-    fi
+    log_success "Deployed with Docker successfully"
 }
 
-health_check() {
-    local url=$1
-    log_info "Performing health check on $url..."
+# Deploy to VPS with PM2
+deploy_pm2() {
+    log_info "Deploying with PM2..."
     
-    # Wait for deployment to be ready
+    # Check if PM2 is installed
+    if ! command -v pm2 &> /dev/null; then
+        log_warning "PM2 not found. Installing..."
+        npm install -g pm2
+    fi
+    
+    # Create PM2 ecosystem file
+    cat > ecosystem.config.js << EOF
+module.exports = {
+  apps: [{
+    name: '$PROJECT_NAME-$ENVIRONMENT',
+    script: 'npm',
+    args: 'start',
+    cwd: '$(pwd)',
+    instances: 'max',
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: '$ENVIRONMENT',
+      PORT: 3000
+    },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true
+  }]
+}
+EOF
+    
+    # Create logs directory
+    mkdir -p logs
+    
+    # Start with PM2
+    pm2 start ecosystem.config.js
+    pm2 save
+    pm2 startup
+    
+    log_success "Deployed with PM2 successfully"
+}
+
+# Health check
+health_check() {
+    log_info "Performing health check..."
+    
+    local url="https://$DOMAIN"
+    if [ "$ENVIRONMENT" != "production" ]; then
+        url="http://localhost:3000"
+    fi
+    
+    # Wait for application to start
     sleep 10
     
     # Check health endpoint
@@ -129,61 +208,53 @@ health_check() {
     fi
 }
 
+# Cleanup
 cleanup() {
     log_info "Cleaning up..."
+    
     # Remove temporary files
-    rm -rf .next/cache
+    rm -f ecosystem.config.js
+    
     log_success "Cleanup completed"
 }
 
 # Main deployment function
-deploy() {
-    local environment=${1:-"development"}
+main() {
+    log_info "Starting deployment for environment: $ENVIRONMENT"
     
-    log_info "Starting deployment for environment: $environment"
-    
-    # Pre-deployment checks
-    check_dependencies
+    # Run deployment steps
+    check_prerequisites
     install_dependencies
     run_tests
     build_application
     
-    # Deploy based on environment
-    case $environment in
-        "production")
-            deploy_to_vercel "production"
-            health_check "https://$DOMAIN"
-            ;;
-        "staging")
-            deploy_to_vercel "staging"
-            health_check "https://$STAGING_DOMAIN"
+    # Choose deployment method
+    case "$ENVIRONMENT" in
+        "production"|"staging")
+            deploy_vercel
             ;;
         "docker")
-            deploy_with_docker "production"
+            deploy_docker
+            ;;
+        "pm2")
+            deploy_pm2
             ;;
         *)
-            deploy_to_vercel "development"
+            log_error "Unknown environment: $ENVIRONMENT"
+            log_info "Available environments: production, staging, docker, pm2"
+            exit 1
             ;;
     esac
     
+    health_check
     cleanup
+    
     log_success "Deployment completed successfully!"
+    log_info "Application is now live at: https://$DOMAIN"
 }
 
-# Script execution
-if [ $# -eq 0 ]; then
-    log_info "No environment specified, deploying to development"
-    deploy "development"
-else
-    deploy $1
-fi
+# Handle script interruption
+trap cleanup EXIT
 
-# Post-deployment information
-echo ""
-echo "==================================="
-echo "🚀 EChart Trading Platform Deployed"
-echo "==================================="
-echo "Production: https://$DOMAIN"
-echo "Staging: https://$STAGING_DOMAIN"
-echo "Health Check: https://$DOMAIN/api/health"
-echo "==================================="
+# Run main function
+main "$@"
