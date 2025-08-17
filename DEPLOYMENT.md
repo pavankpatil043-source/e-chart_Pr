@@ -6,75 +6,19 @@ Complete deployment guide for the EChart Trading Platform to echart.in domain.
 
 ### Prerequisites
 - Node.js 18+ installed
-- Git repository access
-- Domain configured (echart.in)
+- npm or yarn package manager
+- Git for version control
 
 ### One-Click Deployment
 \`\`\`bash
-# Make script executable
+# Make deploy script executable
 chmod +x deploy.sh
 
 # Deploy to production
 ./deploy.sh production vercel
 \`\`\`
 
-## 📋 Deployment Options
-
-### 1. Vercel (Recommended)
-**Pros:** Automatic SSL, global CDN, zero-config deployment
-**Best for:** Production deployments with minimal maintenance
-
-\`\`\`bash
-# Install Vercel CLI
-npm install -g vercel
-
-# Deploy to production
-vercel --prod
-
-# Configure custom domain
-# Go to Vercel Dashboard → Project → Settings → Domains
-# Add: echart.in and www.echart.in
-\`\`\`
-
-**DNS Configuration for Vercel:**
-\`\`\`
-Type: A
-Name: @
-Value: 76.76.19.61
-
-Type: A  
-Name: www
-Value: 76.76.19.61
-\`\`\`
-
-### 2. Docker Deployment
-**Pros:** Consistent environment, easy scaling, containerized
-**Best for:** VPS deployments with Docker support
-
-\`\`\`bash
-# Build and run with Docker
-docker build -t echart-trading .
-docker run -d -p 3000:3000 --name echart-trading echart-trading
-
-# Or use deployment script
-./deploy.sh production docker
-\`\`\`
-
-### 3. VPS Deployment
-**Pros:** Full control, custom configuration, cost-effective
-**Best for:** Custom server setups with specific requirements
-
-\`\`\`bash
-# Deploy to VPS with PM2
-./deploy.sh production vps
-
-# Manual VPS setup
-npm install
-npm run build
-pm2 start npm --name "echart-trading" -- start
-\`\`\`
-
-## 🔧 Environment Configuration
+## 📋 Environment Configuration
 
 ### Required Environment Variables
 \`\`\`env
@@ -85,126 +29,139 @@ NEXT_PUBLIC_DOMAIN=echart.in
 
 ### Optional Environment Variables
 \`\`\`env
-# Analytics
-GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
-VERCEL_ANALYTICS_ID=your_analytics_id
+# Feature Flags
+NEXT_PUBLIC_ENABLE_LIVE_DATA=true
+NEXT_PUBLIC_ENABLE_AI_CHAT=true
+NEXT_PUBLIC_ENABLE_NOTIFICATIONS=true
 
 # External APIs
 ALPHA_VANTAGE_API_KEY=your_key
 YAHOO_FINANCE_API_KEY=your_key
 NSE_API_KEY=your_key
 
-# AI Features
-OPENAI_API_KEY=your_openai_key
-
 # Database
 DATABASE_URL=postgresql://...
 REDIS_URL=redis://...
+
+# Analytics
+GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
 \`\`\`
 
-### Setting Environment Variables
+## 🌐 Deployment Options
 
-#### Vercel
-1. Go to Vercel Dashboard
-2. Select your project
-3. Go to Settings → Environment Variables
-4. Add each variable for Production environment
+### Option 1: Vercel (Recommended)
+Best for production deployments with automatic SSL and global CDN.
 
-#### Docker
 \`\`\`bash
-# Create .env file
-cp .env.example .env
-# Edit .env with your values
+# Install Vercel CLI
+npm i -g vercel
 
-# Run with environment file
-docker run -d --env-file .env -p 3000:3000 echart-trading
+# Login to Vercel
+vercel login
+
+# Deploy to production
+vercel --prod
+
+# Or use the deployment script
+./deploy.sh production vercel
 \`\`\`
 
-#### VPS
+#### Vercel Configuration
+- Domain: echart.in
+- Framework: Next.js
+- Build Command: `npm run build`
+- Output Directory: `.next`
+- Install Command: `npm install`
+
+### Option 2: Docker Deployment
+Perfect for VPS or cloud server deployments.
+
 \`\`\`bash
-# Create .env.local file
-cp .env.example .env.local
-# Edit .env.local with your values
+# Build and run with Docker
+docker build -t echart-trading .
+docker run -d -p 3000:3000 --name echart-trading echart-trading
+
+# Or use the deployment script
+./deploy.sh production docker
 \`\`\`
 
-## 🛡️ Security Configuration
+### Option 3: PM2 Deployment
+Ideal for Node.js process management on VPS.
+
+\`\`\`bash
+# Install PM2 globally
+npm i -g pm2
+
+# Deploy with PM2
+./deploy.sh production pm2
+\`\`\`
+
+### Option 4: Traditional VPS
+
+#### Install Dependencies
+\`\`\`bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install Nginx
+sudo apt install nginx -y
+\`\`\`
+
+#### Configure Nginx
+\`\`\`nginx
+server {
+    listen 80;
+    server_name echart.in www.echart.in;
+    
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+\`\`\`
+
+## 🌐 Domain Configuration
+
+### DNS Records for echart.in
+\`\`\`
+Type: A
+Name: @
+Value: 76.76.19.61 (Vercel IP)
+
+Type: A  
+Name: www
+Value: 76.76.19.61
+
+Type: CNAME
+Name: www
+Value: cname.vercel-dns.com
+\`\`\`
 
 ### SSL Certificate
-
-#### Vercel
-- Automatic SSL certificate
-- No configuration required
-
-#### VPS with Nginx
+- **Vercel**: Automatic SSL certificate
+- **VPS**: Use Let's Encrypt
 \`\`\`bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx -y
-
-# Get SSL certificate
 sudo certbot --nginx -d echart.in -d www.echart.in
-
-# Auto-renewal
-sudo crontab -e
-# Add: 0 12 * * * /usr/bin/certbot renew --quiet
-\`\`\`
-
-### Security Headers
-Configured in `next.config.mjs`:
-\`\`\`javascript
-async headers() {
-  return [
-    {
-      source: '/(.*)',
-      headers: [
-        {
-          key: 'Strict-Transport-Security',
-          value: 'max-age=63072000; includeSubDomains; preload'
-        },
-        {
-          key: 'X-XSS-Protection',
-          value: '1; mode=block'
-        }
-      ]
-    }
-  ]
-}
 \`\`\`
 
 ## 📊 Monitoring & Health Checks
 
 ### Health Check Endpoint
 - URL: `https://echart.in/api/health`
-- Returns: Application status and system metrics
-- Monitoring: Automatic health checks every 30 seconds
-
-### Logging
-
-#### Vercel
-\`\`\`bash
-# View deployment logs
-vercel logs
-
-# Real-time logs
-vercel logs --follow
-\`\`\`
-
-#### Docker
-\`\`\`bash
-# View container logs
-docker logs echart-trading
-
-# Follow logs
-docker logs -f echart-trading
-\`\`\`
-
-#### VPS with PM2
-\`\`\`bash
-# View PM2 logs
-pm2 logs echart-trading
-
-# Monitor in real-time
-pm2 monit
-\`\`\`
+- Returns: Application status and metrics
+- Monitoring: Every 30 seconds
 
 ### Performance Monitoring
 - Core Web Vitals tracking
@@ -212,19 +169,36 @@ pm2 monit
 - Server-side performance metrics
 - API response time monitoring
 
-## 🚨 Troubleshooting
+## 🛡️ Security Configuration
 
-### Common Issues
-
-#### Build Failures
-\`\`\`bash
-# Clear cache and rebuild
-rm -rf .next node_modules
-npm install
-npm run build
+### Security Headers
+\`\`\`json
+{
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "origin-when-cross-origin",
+  "X-XSS-Protection": "1; mode=block",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains"
+}
 \`\`\`
 
-#### Memory Issues
+### Rate Limiting
+- API endpoints: 100 requests/minute
+- WebSocket connections: 10/minute
+- File uploads: 5MB max size
+
+## 🚨 Troubleshooting
+
+### Common Build Issues
+
+#### PostCSS Configuration Error
+\`\`\`bash
+# Fix: Remove @tailwindcss/postcss and use tailwindcss directly
+npm uninstall @tailwindcss/postcss
+npm install tailwindcss autoprefixer postcss
+\`\`\`
+
+#### Memory Issues During Build
 \`\`\`bash
 # Increase Node.js memory limit
 export NODE_OPTIONS="--max-old-space-size=4096"
@@ -233,30 +207,13 @@ npm run build
 
 #### Port Already in Use
 \`\`\`bash
-# Find and kill process on port 3000
+# Kill process on port 3000
 lsof -ti:3000 | xargs kill -9
-\`\`\`
-
-#### PostCSS/Tailwind Issues
-\`\`\`bash
-# Reinstall CSS dependencies
-npm uninstall tailwindcss autoprefixer postcss
-npm install tailwindcss autoprefixer postcss
-\`\`\`
-
-#### Docker Issues
-\`\`\`bash
-# Remove old containers and images
-docker container prune
-docker image prune
-
-# Rebuild from scratch
-docker build --no-cache -t echart-trading .
 \`\`\`
 
 ### Debug Commands
 \`\`\`bash
-# Test build locally
+# Check build locally
 npm run build
 
 # Type checking
@@ -269,71 +226,64 @@ npm run lint
 curl -f https://echart.in/api/health
 \`\`\`
 
-## 🔄 CI/CD Pipeline
-
-### GitHub Actions (Automatic)
-The repository includes GitHub Actions workflow for:
-- Automatic testing on pull requests
-- Deployment on merge to main branch
-- Environment-specific deployments
-
-### Manual Deployment
+### Log Analysis
 \`\`\`bash
-# Production deployment
-git push origin main
-# Triggers automatic deployment
+# Vercel logs
+vercel logs
 
-# Or manual deployment
-./deploy.sh production vercel
+# PM2 logs
+pm2 logs echart-trading
+
+# Docker logs
+docker logs echart-trading
 \`\`\`
 
 ## 📈 Performance Optimization
 
 ### Build Optimization
-- Bundle analysis with `@next/bundle-analyzer`
-- Tree shaking for unused code removal
-- Image optimization with WebP/AVIF formats
-- Static asset caching (1 year)
+- Bundle analysis with `npm run analyze`
+- Code splitting and tree shaking
+- Image optimization (WebP/AVIF)
+- Static asset compression
 
 ### Runtime Optimization
-- Server-side rendering (SSR)
-- Static site generation (SSG) where applicable
-- API route caching (5 minutes)
-- CDN distribution via Vercel Edge Network
+- CDN for static assets
+- Database connection pooling
+- Redis caching for API responses
+- Gzip/Brotli compression
 
-### Monitoring Performance
-\`\`\`bash
-# Analyze bundle size
-npm run analyze
+### Caching Strategy
+- Static assets: 1 year cache
+- API responses: 5 minutes cache
+- Dynamic content: No cache
+- Service worker for offline support
 
-# Lighthouse audit
-npx lighthouse https://echart.in --view
+## 🔄 CI/CD Pipeline
 
-# Core Web Vitals
-# Check in Google Search Console
+### GitHub Actions Workflow
+\`\`\`yaml
+name: Deploy to Production
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+      - run: npm ci
+      - run: npm run build
+      - uses: amondnet/vercel-action@v20
 \`\`\`
 
-## 🔐 Backup & Recovery
+### Automated Testing
+- Unit tests with Jest
+- Integration tests
+- E2E tests with Playwright
+- Performance testing
 
-### Database Backup (if using)
-\`\`\`bash
-# PostgreSQL backup
-pg_dump $DATABASE_URL > backup.sql
-
-# Restore
-psql $DATABASE_URL < backup.sql
-\`\`\`
-
-### Application Backup
-\`\`\`bash
-# Create backup
-tar -czf echart-backup-$(date +%Y%m%d).tar.gz .
-
-# Restore
-tar -xzf echart-backup-YYYYMMDD.tar.gz
-\`\`\`
-
-## 📞 Support & Maintenance
+## 📞 Support & Monitoring
 
 ### Monitoring URLs
 - **Production**: https://echart.in
@@ -341,43 +291,62 @@ tar -xzf echart-backup-YYYYMMDD.tar.gz
 - **Sitemap**: https://echart.in/sitemap.xml
 - **Robots**: https://echart.in/robots.txt
 
-### Maintenance Tasks
-- Weekly dependency updates
-- Monthly security patches
-- Quarterly performance reviews
-- SSL certificate renewal (automatic with Vercel)
+### Performance Targets
+- Lighthouse Score: 90+
+- Core Web Vitals: All Green
+- Server Response Time: <200ms
+- Error Rate: <0.1%
+- Uptime: 99.9%
 
-### Support Contacts
-- Technical Issues: Create GitHub issue
-- Deployment Issues: Check deployment logs
-- Performance Issues: Monitor health endpoint
+### Error Tracking
+- Sentry for error monitoring
+- DataDog for performance metrics
+- Custom logging with Winston
+- Real-time alerts via Slack/Email
 
-## ✅ Post-Deployment Checklist
+## ✅ Deployment Checklist
 
-- [ ] Domain configured and accessible
-- [ ] SSL certificate active and valid
+### Pre-Deployment
+- [ ] Environment variables configured
+- [ ] Build passes locally
+- [ ] Tests are passing
+- [ ] Security scan completed
+- [ ] Performance audit done
+
+### Deployment
+- [ ] Domain DNS records updated
+- [ ] SSL certificate active
 - [ ] Health checks passing
-- [ ] All environment variables set
-- [ ] Performance metrics within targets
-- [ ] Security headers configured
-- [ ] Monitoring and alerting setup
+- [ ] Performance metrics green
+- [ ] Error tracking configured
+
+### Post-Deployment
+- [ ] Monitoring alerts configured
 - [ ] Backup strategy implemented
 - [ ] Documentation updated
-- [ ] Team notified of deployment
+- [ ] Team notified
+- [ ] Rollback plan ready
 
 ## 🎉 Success!
 
 Your EChart Trading Platform should now be live at:
 **https://echart.in**
 
-Features included:
+### Features Available
 - 📈 Live NSE market data with real-time updates
 - 🤖 AI-powered trading insights and chat
-- 📊 Technical analysis tools and indicators
-- 📱 Mobile-responsive design
-- ⚡ High-performance optimized build
-- 🔒 Production-ready security
-- 🌐 SEO-optimized with sitemap
-- 📊 Comprehensive monitoring and health checks
+- 📊 Technical analysis with advanced indicators
+- 📱 Mobile-responsive design optimized for trading
+- ⚡ High-performance build with proper caching
+- 🔒 Production-ready security headers and monitoring
+- 🌐 SEO-optimized with comprehensive sitemap
+- 🏥 Advanced health monitoring with system metrics
 
-For any issues or questions, refer to the troubleshooting section or create a GitHub issue.
+### Next Steps
+1. Configure monitoring and alerts
+2. Set up analytics tracking
+3. Implement user authentication
+4. Add portfolio tracking features
+5. Integrate with real trading APIs
+
+For support or issues, check the health endpoint or review the logs using the commands provided above.

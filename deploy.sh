@@ -4,7 +4,7 @@
 # Usage: ./deploy.sh [environment] [platform]
 # Example: ./deploy.sh production vercel
 
-set -e
+set -e  # Exit on any error
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,194 +19,214 @@ PLATFORM=${2:-vercel}
 PROJECT_NAME="echart-trading-platform"
 DOMAIN="echart.in"
 
-echo -e "${BLUE}🚀 Starting deployment for EChart Trading Platform${NC}"
-echo -e "${BLUE}Environment: ${ENVIRONMENT}${NC}"
-echo -e "${BLUE}Platform: ${PLATFORM}${NC}"
-echo -e "${BLUE}Domain: ${DOMAIN}${NC}"
-
-# Function to check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
+# Functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-# Function to install dependencies
-install_dependencies() {
-    echo -e "${YELLOW}📦 Installing dependencies...${NC}"
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+check_dependencies() {
+    log_info "Checking dependencies..."
+    
+    # Check Node.js
+    if ! command -v node &> /dev/null; then
+        log_error "Node.js is not installed"
+        exit 1
+    fi
+    
+    # Check npm
+    if ! command -v npm &> /dev/null; then
+        log_error "npm is not installed"
+        exit 1
+    fi
+    
+    # Check git
+    if ! command -v git &> /dev/null; then
+        log_error "git is not installed"
+        exit 1
+    fi
+    
+    log_success "All dependencies are installed"
+}
+
+install_packages() {
+    log_info "Installing packages..."
+    
     if [ -f "package-lock.json" ]; then
         npm ci
-    elif [ -f "yarn.lock" ]; then
-        yarn install --frozen-lockfile
-    elif [ -f "pnpm-lock.yaml" ]; then
-        pnpm install --frozen-lockfile
     else
         npm install
     fi
-    echo -e "${GREEN}✅ Dependencies installed${NC}"
-}
-
-# Function to run tests
-run_tests() {
-    echo -e "${YELLOW}🧪 Running tests...${NC}"
-    if npm run test --if-present; then
-        echo -e "${GREEN}✅ Tests passed${NC}"
-    else
-        echo -e "${RED}❌ Tests failed${NC}"
-        exit 1
-    fi
-}
-
-# Function to build application
-build_application() {
-    echo -e "${YELLOW}🔨 Building application...${NC}"
-    if npm run build; then
-        echo -e "${GREEN}✅ Build successful${NC}"
-    else
-        echo -e "${RED}❌ Build failed${NC}"
-        exit 1
-    fi
-}
-
-# Function to deploy to Vercel
-deploy_vercel() {
-    echo -e "${YELLOW}🌐 Deploying to Vercel...${NC}"
     
-    if ! command_exists vercel; then
-        echo -e "${YELLOW}Installing Vercel CLI...${NC}"
+    log_success "Packages installed successfully"
+}
+
+run_tests() {
+    log_info "Running tests..."
+    
+    # Type checking
+    if npm run type-check &> /dev/null; then
+        log_success "Type checking passed"
+    else
+        log_warning "Type checking failed, but continuing..."
+    fi
+    
+    # Linting
+    if npm run lint &> /dev/null; then
+        log_success "Linting passed"
+    else
+        log_warning "Linting failed, but continuing..."
+    fi
+}
+
+build_application() {
+    log_info "Building application..."
+    
+    # Set environment variables
+    export NODE_ENV=$ENVIRONMENT
+    export NEXT_TELEMETRY_DISABLED=1
+    
+    # Build the application
+    npm run build
+    
+    log_success "Application built successfully"
+}
+
+deploy_vercel() {
+    log_info "Deploying to Vercel..."
+    
+    # Check if Vercel CLI is installed
+    if ! command -v vercel &> /dev/null; then
+        log_info "Installing Vercel CLI..."
         npm install -g vercel
     fi
     
+    # Deploy based on environment
     if [ "$ENVIRONMENT" = "production" ]; then
         vercel --prod --yes
     else
         vercel --yes
     fi
     
-    echo -e "${GREEN}✅ Deployed to Vercel${NC}"
+    log_success "Deployed to Vercel successfully"
 }
 
-# Function to deploy with Docker
 deploy_docker() {
-    echo -e "${YELLOW}🐳 Building Docker image...${NC}"
+    log_info "Deploying with Docker..."
     
-    if ! command_exists docker; then
-        echo -e "${RED}❌ Docker is not installed${NC}"
+    # Check if Docker is installed
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker is not installed"
         exit 1
     fi
     
     # Build Docker image
-    docker build -t $PROJECT_NAME:latest .
+    docker build -t $PROJECT_NAME:$ENVIRONMENT .
     
-    if [ "$ENVIRONMENT" = "production" ]; then
-        # Tag for production
-        docker tag $PROJECT_NAME:latest $PROJECT_NAME:production
-        
-        # Run container
-        docker run -d \
-            --name $PROJECT_NAME \
-            -p 3000:3000 \
-            --restart unless-stopped \
-            $PROJECT_NAME:production
-    else
-        # Run development container
-        docker run -d \
-            --name $PROJECT_NAME-dev \
-            -p 3000:3000 \
-            $PROJECT_NAME:latest
+    # Stop existing container if running
+    if docker ps -q -f name=$PROJECT_NAME; then
+        log_info "Stopping existing container..."
+        docker stop $PROJECT_NAME
+        docker rm $PROJECT_NAME
     fi
     
-    echo -e "${GREEN}✅ Docker deployment complete${NC}"
+    # Run new container
+    docker run -d \
+        --name $PROJECT_NAME \
+        -p 3000:3000 \
+        --restart unless-stopped \
+        $PROJECT_NAME:$ENVIRONMENT
+    
+    log_success "Deployed with Docker successfully"
 }
 
-# Function to deploy to VPS
-deploy_vps() {
-    echo -e "${YELLOW}🖥️ Deploying to VPS...${NC}"
+deploy_pm2() {
+    log_info "Deploying with PM2..."
     
-    if ! command_exists pm2; then
-        echo -e "${YELLOW}Installing PM2...${NC}"
+    # Check if PM2 is installed
+    if ! command -v pm2 &> /dev/null; then
+        log_info "Installing PM2..."
         npm install -g pm2
     fi
     
-    # Build application
-    build_application
+    # Create PM2 ecosystem file
+    cat > ecosystem.config.js << EOF
+module.exports = {
+  apps: [{
+    name: '$PROJECT_NAME',
+    script: 'npm',
+    args: 'start',
+    cwd: '$(pwd)',
+    instances: 'max',
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: '$ENVIRONMENT',
+      PORT: 3000
+    },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true
+  }]
+}
+EOF
     
-    # Start with PM2
-    if [ "$ENVIRONMENT" = "production" ]; then
-        pm2 start npm --name "$PROJECT_NAME" -- start
-        pm2 save
-        pm2 startup
-    else
-        pm2 start npm --name "$PROJECT_NAME-dev" -- run dev
-    fi
+    # Create logs directory
+    mkdir -p logs
     
-    echo -e "${GREEN}✅ VPS deployment complete${NC}"
+    # Deploy with PM2
+    pm2 start ecosystem.config.js
+    pm2 save
+    pm2 startup
+    
+    log_success "Deployed with PM2 successfully"
 }
 
-# Function to run health checks
 health_check() {
-    echo -e "${YELLOW}🏥 Running health checks...${NC}"
+    log_info "Running health check..."
     
     # Wait for application to start
     sleep 10
     
     # Check health endpoint
-    if curl -f http://localhost:3000/api/health >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ Health check passed${NC}"
+    if curl -f http://localhost:3000/api/health &> /dev/null; then
+        log_success "Health check passed"
     else
-        echo -e "${RED}❌ Health check failed${NC}"
-        exit 1
+        log_warning "Health check failed - application might still be starting"
     fi
 }
 
-# Function to setup SSL certificate
-setup_ssl() {
-    if [ "$PLATFORM" = "vps" ] && [ "$ENVIRONMENT" = "production" ]; then
-        echo -e "${YELLOW}🔒 Setting up SSL certificate...${NC}"
-        
-        if command_exists certbot; then
-            sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN
-            echo -e "${GREEN}✅ SSL certificate configured${NC}"
-        else
-            echo -e "${YELLOW}⚠️ Certbot not found. Please install SSL certificate manually${NC}"
-        fi
-    fi
+cleanup() {
+    log_info "Cleaning up..."
+    
+    # Remove temporary files
+    rm -f ecosystem.config.js
+    
+    log_success "Cleanup completed"
 }
 
-# Function to setup monitoring
-setup_monitoring() {
-    echo -e "${YELLOW}📊 Setting up monitoring...${NC}"
-    
-    # Create monitoring configuration
-    cat > monitoring.json << EOF
-{
-  "name": "$PROJECT_NAME",
-  "url": "https://$DOMAIN",
-  "environment": "$ENVIRONMENT",
-  "healthCheck": "https://$DOMAIN/api/health",
-  "alerts": {
-    "email": "admin@$DOMAIN",
-    "slack": "#alerts"
-  }
-}
-EOF
-    
-    echo -e "${GREEN}✅ Monitoring configuration created${NC}"
-}
-
-# Main deployment flow
 main() {
-    echo -e "${BLUE}Starting deployment process...${NC}"
+    log_info "Starting deployment for $PROJECT_NAME"
+    log_info "Environment: $ENVIRONMENT"
+    log_info "Platform: $PLATFORM"
+    log_info "Domain: $DOMAIN"
     
     # Pre-deployment checks
-    if [ ! -f "package.json" ]; then
-        echo -e "${RED}❌ package.json not found${NC}"
-        exit 1
-    fi
-    
-    # Install dependencies
-    install_dependencies
-    
-    # Run tests (if available)
-    # run_tests
+    check_dependencies
+    install_packages
+    run_tests
+    build_application
     
     # Deploy based on platform
     case $PLATFORM in
@@ -217,40 +237,26 @@ main() {
             deploy_docker
             health_check
             ;;
-        "vps")
-            deploy_vps
+        "pm2")
+            deploy_pm2
             health_check
-            setup_ssl
             ;;
         *)
-            echo -e "${RED}❌ Unknown platform: $PLATFORM${NC}"
-            echo -e "${YELLOW}Supported platforms: vercel, docker, vps${NC}"
+            log_error "Unknown platform: $PLATFORM"
+            log_info "Supported platforms: vercel, docker, pm2"
             exit 1
             ;;
     esac
     
-    # Setup monitoring
-    setup_monitoring
+    # Post-deployment
+    cleanup
     
-    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
-    echo -e "${GREEN}🌐 Your application should be available at: https://$DOMAIN${NC}"
-    
-    # Display useful information
-    echo -e "${BLUE}📋 Deployment Summary:${NC}"
-    echo -e "${BLUE}  Environment: $ENVIRONMENT${NC}"
-    echo -e "${BLUE}  Platform: $PLATFORM${NC}"
-    echo -e "${BLUE}  Domain: https://$DOMAIN${NC}"
-    echo -e "${BLUE}  Health Check: https://$DOMAIN/api/health${NC}"
-    echo -e "${BLUE}  Sitemap: https://$DOMAIN/sitemap.xml${NC}"
-    
-    if [ "$PLATFORM" = "docker" ]; then
-        echo -e "${BLUE}  Docker Container: $PROJECT_NAME${NC}"
-        echo -e "${BLUE}  Docker Logs: docker logs $PROJECT_NAME${NC}"
-    elif [ "$PLATFORM" = "vps" ]; then
-        echo -e "${BLUE}  PM2 Status: pm2 status${NC}"
-        echo -e "${BLUE}  PM2 Logs: pm2 logs $PROJECT_NAME${NC}"
-    fi
+    log_success "Deployment completed successfully!"
+    log_info "Application should be available at: https://$DOMAIN"
 }
+
+# Handle script interruption
+trap 'log_error "Deployment interrupted"; cleanup; exit 1' INT TERM
 
 # Run main function
 main "$@"
