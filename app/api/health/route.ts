@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { checkDatabase, checkRedis, checkExternalApis } from "./checks" // Import check functions
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,22 +11,27 @@ export async function GET(request: NextRequest) {
       version: process.env.npm_package_version || "1.0.0",
       domain: process.env.NEXT_PUBLIC_DOMAIN || "localhost",
       url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+      features: {
+        liveData: process.env.NEXT_PUBLIC_ENABLE_LIVE_DATA === "true",
+        aiChat: process.env.NEXT_PUBLIC_ENABLE_AI_CHAT === "true",
+        notifications: process.env.NEXT_PUBLIC_ENABLE_NOTIFICATIONS === "true",
+        portfolio: process.env.NEXT_PUBLIC_ENABLE_PORTFOLIO === "true",
+      },
       services: {
         api: "operational",
         websocket: "operational",
-        database: "operational", // Update based on actual DB status
+        database: await checkDatabase(), // Update based on actual DB status
         cache: "operational",
+        redis: await checkRedis(),
+        externalApis: await checkExternalApis(),
       },
-      memory: {
-        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
-        external: Math.round(process.memoryUsage().external / 1024 / 1024),
-      },
-      system: {
-        platform: process.platform,
-        arch: process.arch,
-        nodeVersion: process.version,
-        pid: process.pid,
+      performance: {
+        memoryUsage: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          external: Math.round(process.memoryUsage().external / 1024 / 1024),
+        },
+        cpuUsage: process.cpuUsage(),
       },
     }
 

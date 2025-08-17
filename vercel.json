@@ -1,83 +1,15 @@
 {
-  "version": 2,
-  "name": "echart-trading-platform",
-  "env": {
-    "NODE_ENV": "production",
-    "NEXT_PUBLIC_APP_URL": "https://echart.in",
-    "NEXT_PUBLIC_DOMAIN": "echart.in"
-  },
-  "build": {
-    "env": {
-      "NODE_ENV": "production"
-    }
-  },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "outputDirectory": ".next",
   "functions": {
-    "app/api/*/route.ts": {
-      "maxDuration": 30,
-      "memory": 1024
-    },
-    "app/api/chat/route.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "app/api/websocket/route.ts": {
-      "maxDuration": 300,
-      "memory": 512
+    "app/api/**/*.ts": {
+      "maxDuration": 30
     }
   },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=60, stale-while-revalidate=300"
-        }
-      ]
-    },
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "origin-when-cross-origin"
-        },
-        {
-          "key": "X-DNS-Prefetch-Control",
-          "value": "on"
-        }
-      ]
-    },
-    {
-      "source": "/static/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
-    }
-  ],
   "rewrites": [
     {
       "source": "/sitemap.xml",
@@ -95,6 +27,52 @@
       "permanent": true
     }
   ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://echart.in"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "cleanUrls": true,
   "trailingSlash": false,
-  "cleanUrls": true
+  "regions": ["bom1"],
+  "env": {
+    "NODE_ENV": "production",
+    "NEXT_PUBLIC_APP_URL": "https://echart.in",
+    "NEXT_PUBLIC_DOMAIN": "echart.in"
+  }
 }

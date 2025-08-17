@@ -5,15 +5,32 @@ export async function GET() {
 
   const robots = `User-agent: *
 Allow: /
-Disallow: /api/
-Disallow: /_next/
-Disallow: /admin/
 
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /admin/
+Disallow: /_next/
+Disallow: /private/
+
+# Allow specific API endpoints that should be crawled
+Allow: /api/sitemap
+Allow: /api/robots
+
+# Sitemap location
 Sitemap: ${baseUrl}/sitemap.xml
 
-# EChart Trading Platform
-# Live NSE market data and AI-powered trading insights
-`
+# Crawl delay (optional)
+Crawl-delay: 1
+
+# Specific rules for different bots
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /`
 
   return new NextResponse(robots, {
     status: 200,
