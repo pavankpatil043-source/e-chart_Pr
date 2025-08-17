@@ -21,12 +21,11 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
-    unoptimized: true, // Added from updates
+    unoptimized: true,
   },
   serverExternalPackages: ['sharp'],
   experimental: {
-    optimizeCss: true,
-    serverComponentsExternalPackages: undefined,
+    // Removed optimizeCss to avoid critters dependency issue
   },
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
@@ -78,10 +77,10 @@ const nextConfig = {
     ]
   },
   eslint: {
-    ignoreDuringBuilds: true, // Added from updates
+    ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: true, // Added from updates
+    ignoreBuildErrors: true,
   },
 }
 

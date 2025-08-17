@@ -1,192 +1,121 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-interface HealthStatus {
-  status: "healthy" | "unhealthy"
-  timestamp: string
-  uptime: number
-  environment: string
-  version: string
-  services: {
-    database: "connected" | "disconnected" | "not_configured"
-    redis: "connected" | "disconnected" | "not_configured"
-    external_apis: "operational" | "degraded" | "down"
-  }
-  system: {
-    memory: {
-      used: number
-      total: number
-      percentage: number
-    }
-    cpu: {
-      usage: number
-    }
-    disk: {
-      used: number
-      total: number
-      percentage: number
-    }
-  }
-  performance: {
-    response_time: number
-    requests_per_minute: number
-    error_rate: number
-  }
-}
-
-// Simple in-memory metrics (in production, use Redis or database)
-let requestCount = 0
-let errorCount = 0
-const startTime = Date.now()
-
 export async function GET(request: NextRequest) {
-  const start = Date.now()
-  requestCount++
-
   try {
-    // Get system information
-    const memoryUsage = process.memoryUsage()
-    const uptime = process.uptime()
+    const startTime = Date.now()
 
-    // Check external services
-    const servicesStatus = await checkServices()
-
-    // Calculate performance metrics
-    const responseTime = Date.now() - start
-    const requestsPerMinute = Math.round((requestCount / (uptime / 60)) * 100) / 100
-    const errorRate = requestCount > 0 ? (errorCount / requestCount) * 100 : 0
-
-    const healthStatus: HealthStatus = {
-      status: "healthy",
+    // Basic system information
+    const systemInfo = {
       timestamp: new Date().toISOString(),
-      uptime: Math.round(uptime),
-      environment: process.env.NODE_ENV || "development",
-      version: process.env.npm_package_version || "1.0.0",
-      services: servicesStatus,
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      memory: process.memoryUsage(),
+      env: process.env.NODE_ENV || "development",
+    }
+
+    // Check external API connectivity
+    const externalChecks = await Promise.allSettled([
+      // Yahoo Finance API check
+      fetch("https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS", {
+        method: "GET",
+        headers: { "User-Agent": "EChart-Trading-Platform" },
+        signal: AbortSignal.timeout(5000),
+      }).then((res) => ({ yahoo: res.ok })),
+
+      // NSE API check (mock endpoint)
+      fetch("https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050", {
+        method: "GET",
+        headers: { "User-Agent": "EChart-Trading-Platform" },
+        signal: AbortSignal.timeout(5000),
+      }).then((res) => ({ nse: res.ok })),
+    ])
+
+    const apiStatus = externalChecks.reduce(
+      (acc, result) => {
+        if (result.status === "fulfilled") {
+          return { ...acc, ...result.value }
+        }
+        return acc
+      },
+      { yahoo: false, nse: false },
+    )
+
+    // Performance metrics
+    const responseTime = Date.now() - startTime
+
+    // Health status determination
+    const isHealthy = responseTime < 1000 && systemInfo.memory.heapUsed < 500 * 1024 * 1024 // 500MB
+
+    const healthData = {
+      status: isHealthy ? "healthy" : "degraded",
+      timestamp: systemInfo.timestamp,
+      version: "1.0.0",
+      environment: systemInfo.env,
       system: {
+        uptime: systemInfo.uptime,
+        nodeVersion: systemInfo.nodeVersion,
+        platform: systemInfo.platform,
+        arch: systemInfo.arch,
+        pid: systemInfo.pid,
         memory: {
-          used: Math.round(memoryUsage.heapUsed / 1024 / 1024), // MB
-          total: Math.round(memoryUsage.heapTotal / 1024 / 1024), // MB
-          percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
-        },
-        cpu: {
-          usage: await getCPUUsage(),
-        },
-        disk: {
-          used: 0, // Would need fs.statSync in real implementation
-          total: 0,
-          percentage: 0,
+          used: Math.round(systemInfo.memory.heapUsed / 1024 / 1024), // MB
+          total: Math.round(systemInfo.memory.heapTotal / 1024 / 1024), // MB
+          external: Math.round(systemInfo.memory.external / 1024 / 1024), // MB
         },
       },
       performance: {
-        response_time: responseTime,
-        requests_per_minute: requestsPerMinute,
-        error_rate: Math.round(errorRate * 100) / 100,
+        responseTime: `${responseTime}ms`,
+        memoryUsage: `${Math.round((systemInfo.memory.heapUsed / systemInfo.memory.heapTotal) * 100)}%`,
+      },
+      external: {
+        apis: apiStatus,
+        database: "not_configured", // Would check database if configured
+        cache: "not_configured", // Would check Redis if configured
+      },
+      features: {
+        liveData: process.env.NEXT_PUBLIC_ENABLE_LIVE_DATA === "true",
+        aiChat: process.env.NEXT_PUBLIC_ENABLE_AI_CHAT === "true",
+        notifications: process.env.NEXT_PUBLIC_ENABLE_NOTIFICATIONS === "true",
+        portfolio: process.env.NEXT_PUBLIC_ENABLE_PORTFOLIO === "true",
       },
     }
 
-    // Determine overall health status
-    if (
-      servicesStatus.external_apis === "down" ||
-      healthStatus.system.memory.percentage > 90 ||
-      healthStatus.system.cpu.usage > 90 ||
-      errorRate > 10
-    ) {
-      healthStatus.status = "unhealthy"
-    }
-
-    return NextResponse.json(healthStatus, {
-      status: healthStatus.status === "healthy" ? 200 : 503,
+    return NextResponse.json(healthData, {
+      status: isHealthy ? 200 : 503,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
+        "Content-Type": "application/json",
       },
     })
   } catch (error) {
-    errorCount++
     console.error("Health check error:", error)
 
     return NextResponse.json(
       {
-        status: "unhealthy",
+        status: "error",
         timestamp: new Date().toISOString(),
         error: "Health check failed",
-        uptime: process.uptime(),
+        message: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 503 },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Content-Type": "application/json",
+        },
+      },
     )
   }
 }
 
-async function checkServices() {
-  const services = {
-    database: "not_configured" as const,
-    redis: "not_configured" as const,
-    external_apis: "operational" as const,
-  }
-
-  // Check database connection
-  if (process.env.DATABASE_URL) {
-    try {
-      // In a real app, you'd check actual database connection
-      services.database = "connected"
-    } catch {
-      services.database = "disconnected"
-    }
-  }
-
-  // Check Redis connection
-  if (process.env.REDIS_URL) {
-    try {
-      // In a real app, you'd check actual Redis connection
-      services.redis = "connected"
-    } catch {
-      services.redis = "disconnected"
-    }
-  }
-
-  // Check external APIs
+// Support HEAD requests for simple health checks
+export async function HEAD(request: NextRequest) {
   try {
-    // Test a simple external API call
-    const response = await fetch("https://httpstat.us/200", {
-      method: "HEAD",
-      signal: AbortSignal.timeout(5000),
-    })
-
-    if (!response.ok) {
-      services.external_apis = "degraded"
-    }
-  } catch {
-    services.external_apis = "down"
+    return new NextResponse(null, { status: 200 })
+  } catch (error) {
+    return new NextResponse(null, { status: 500 })
   }
-
-  return services
-}
-
-async function getCPUUsage(): Promise<number> {
-  // Simple CPU usage calculation
-  // In production, you might want to use a more sophisticated method
-  const startUsage = process.cpuUsage()
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const endUsage = process.cpuUsage(startUsage)
-      const totalUsage = endUsage.user + endUsage.system
-      const percentage = (totalUsage / 1000000) * 100 // Convert to percentage
-      resolve(Math.min(Math.round(percentage * 100) / 100, 100))
-    }, 100)
-  })
-}
-
-// Handle other HTTP methods
-export async function POST() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
-}
-
-export async function PUT() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
-}
-
-export async function DELETE() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
 }
