@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 
 interface SitemapUrl {
   loc: string
@@ -7,85 +7,7 @@ interface SitemapUrl {
   priority: number
 }
 
-// Static pages configuration
-const staticPages: Omit<SitemapUrl, "lastmod">[] = [
-  {
-    loc: "",
-    changefreq: "daily",
-    priority: 1.0,
-  },
-  {
-    loc: "/about",
-    changefreq: "monthly",
-    priority: 0.8,
-  },
-  {
-    loc: "/contact",
-    changefreq: "monthly",
-    priority: 0.7,
-  },
-  {
-    loc: "/privacy",
-    changefreq: "yearly",
-    priority: 0.5,
-  },
-  {
-    loc: "/terms",
-    changefreq: "yearly",
-    priority: 0.5,
-  },
-  {
-    loc: "/help",
-    changefreq: "monthly",
-    priority: 0.6,
-  },
-]
-
-// Trading related pages
-const tradingPages: Omit<SitemapUrl, "lastmod">[] = [
-  {
-    loc: "/markets",
-    changefreq: "hourly",
-    priority: 0.9,
-  },
-  {
-    loc: "/markets/nse",
-    changefreq: "hourly",
-    priority: 0.9,
-  },
-  {
-    loc: "/markets/bse",
-    changefreq: "hourly",
-    priority: 0.8,
-  },
-  {
-    loc: "/analysis",
-    changefreq: "daily",
-    priority: 0.8,
-  },
-  {
-    loc: "/portfolio",
-    changefreq: "daily",
-    priority: 0.7,
-  },
-  {
-    loc: "/watchlist",
-    changefreq: "daily",
-    priority: 0.7,
-  },
-  {
-    loc: "/news",
-    changefreq: "hourly",
-    priority: 0.8,
-  },
-  {
-    loc: "/screener",
-    changefreq: "daily",
-    priority: 0.8,
-  },
-]
-
-// Popular Indian stocks
+// Popular Indian stocks for sitemap
 const popularStocks = [
   "RELIANCE",
   "TCS",
@@ -106,39 +28,95 @@ const popularStocks = [
   "NESTLEIND",
   "ULTRACEMCO",
   "WIPRO",
-  "ONGC",
+  "SUNPHARMA",
   "POWERGRID",
   "NTPC",
   "TECHM",
-  "SUNPHARMA",
+  "HCLTECH",
   "COALINDIA",
+  "INDUSINDBK",
+  "BAJAJFINSV",
+  "GRASIM",
+  "CIPLA",
+  "DRREDDY",
+  "EICHERMOT",
+  "ADANIPORTS",
+  "JSWSTEEL",
+  "TATAMOTORS",
+  "BRITANNIA",
+  "DIVISLAB",
+  "APOLLOHOSP",
+  "HEROMOTOCO",
+  "BAJAJ-AUTO",
 ]
 
-// Market sectors
-const sectors = ["banking", "it", "pharma", "auto", "fmcg", "energy", "metals", "realty", "telecom", "infrastructure"]
+// Indian market sectors
+const sectors = [
+  "banking",
+  "information-technology",
+  "pharmaceuticals",
+  "automobiles",
+  "fmcg",
+  "energy",
+  "metals",
+  "infrastructure",
+  "telecom",
+  "chemicals",
+  "textiles",
+  "cement",
+  "real-estate",
+  "media",
+  "fertilizers",
+  "sugar",
+  "paper",
+]
 
-// Market indices
+// Indian market indices
 const indices = [
-  "nifty50",
+  "nifty-50",
   "sensex",
-  "niftybank",
-  "niftynext50",
-  "niftyit",
-  "niftypharma",
-  "niftyauto",
-  "niftyfmcg",
-  "niftyenergy",
-  "niftymetal",
+  "nifty-next-50",
+  "nifty-100",
+  "nifty-200",
+  "nifty-500",
+  "nifty-midcap-50",
+  "nifty-midcap-100",
+  "nifty-smallcap-50",
+  "nifty-smallcap-100",
+  "nifty-bank",
+  "nifty-it",
+  "nifty-pharma",
+  "nifty-auto",
+  "nifty-fmcg",
+  "nifty-metal",
+  "nifty-energy",
+  "nifty-infra",
+  "nifty-realty",
+  "nifty-media",
 ]
 
-function generateSitemapXML(urls: SitemapUrl[]): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+// Educational content pages
+const educationalPages = [
+  "learn/technical-analysis",
+  "learn/fundamental-analysis",
+  "learn/options-trading",
+  "learn/futures-trading",
+  "learn/risk-management",
+  "learn/portfolio-management",
+  "learn/market-psychology",
+  "learn/trading-strategies",
+  "learn/chart-patterns",
+  "learn/indicators",
+  "learn/candlestick-patterns",
+  "learn/support-resistance",
+]
 
-  const urlElements = urls
+function generateSitemapXml(urls: SitemapUrl[]): string {
+  const urlsXml = urls
     .map(
       (url) => `
   <url>
-    <loc>${baseUrl}${url.loc}</loc>
+    <loc>${url.loc}</loc>
     <lastmod>${url.lastmod}</lastmod>
     <changefreq>${url.changefreq}</changefreq>
     <priority>${url.priority}</priority>
@@ -148,150 +126,294 @@ function generateSitemapXML(urls: SitemapUrl[]): string {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  ${urlElements}
+  ${urlsXml}
 </urlset>`
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const currentDate = new Date().toISOString()
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+    const currentDate = new Date().toISOString().split("T")[0]
+
     const urls: SitemapUrl[] = []
 
-    // Add static pages
-    staticPages.forEach((page) => {
-      urls.push({
-        ...page,
+    // Main pages
+    urls.push(
+      {
+        loc: baseUrl,
         lastmod: currentDate,
-      })
-    })
-
-    // Add trading pages
-    tradingPages.forEach((page) => {
-      urls.push({
-        ...page,
-        lastmod: currentDate,
-      })
-    })
-
-    // Add stock pages
-    popularStocks.forEach((stock) => {
-      urls.push({
-        loc: `/stocks/${stock.toLowerCase()}`,
+        changefreq: "daily",
+        priority: 1.0,
+      },
+      {
+        loc: `${baseUrl}/dashboard`,
         lastmod: currentDate,
         changefreq: "hourly",
+        priority: 0.9,
+      },
+      {
+        loc: `${baseUrl}/markets`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.9,
+      },
+      {
+        loc: `${baseUrl}/portfolio`,
+        lastmod: currentDate,
+        changefreq: "daily",
         priority: 0.8,
-      })
-
-      // Add stock analysis pages
-      urls.push({
-        loc: `/stocks/${stock.toLowerCase()}/analysis`,
+      },
+      {
+        loc: `${baseUrl}/analysis`,
         lastmod: currentDate,
         changefreq: "daily",
-        priority: 0.7,
-      })
-
-      // Add stock news pages
-      urls.push({
-        loc: `/stocks/${stock.toLowerCase()}/news`,
-        lastmod: currentDate,
-        changefreq: "hourly",
-        priority: 0.6,
-      })
-    })
-
-    // Add sector pages
-    sectors.forEach((sector) => {
-      urls.push({
-        loc: `/sectors/${sector}`,
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      })
-
-      // Add sector analysis pages
-      urls.push({
-        loc: `/sectors/${sector}/analysis`,
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.6,
-      })
-    })
-
-    // Add index pages
-    indices.forEach((index) => {
-      urls.push({
-        loc: `/indices/${index}`,
-        lastmod: currentDate,
-        changefreq: "hourly",
         priority: 0.8,
-      })
-
-      // Add index analysis pages
-      urls.push({
-        loc: `/indices/${index}/analysis`,
+      },
+      {
+        loc: `${baseUrl}/news`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.7,
+      },
+      {
+        loc: `${baseUrl}/screener`,
         lastmod: currentDate,
         changefreq: "daily",
         priority: 0.7,
-      })
-    })
-
-    // Add educational content pages
-    const educationalTopics = [
-      "technical-analysis",
-      "fundamental-analysis",
-      "options-trading",
-      "derivatives",
-      "mutual-funds",
-      "ipo",
-      "dividend-investing",
-      "risk-management",
-      "portfolio-management",
-      "market-psychology",
-    ]
-
-    educationalTopics.forEach((topic) => {
-      urls.push({
-        loc: `/learn/${topic}`,
+      },
+      {
+        loc: `${baseUrl}/watchlist`,
         lastmod: currentDate,
-        changefreq: "monthly",
+        changefreq: "daily",
+        priority: 0.7,
+      },
+      {
+        loc: `${baseUrl}/alerts`,
+        lastmod: currentDate,
+        changefreq: "daily",
         priority: 0.6,
-      })
-    })
-
-    // Add tools pages
-    const tools = [
-      "calculator",
-      "screener",
-      "compare",
-      "alerts",
-      "portfolio-tracker",
-      "sip-calculator",
-      "tax-calculator",
-    ]
-
-    tools.forEach((tool) => {
-      urls.push({
-        loc: `/tools/${tool}`,
+      },
+      {
+        loc: `${baseUrl}/settings`,
         lastmod: currentDate,
         changefreq: "weekly",
+        priority: 0.5,
+      },
+    )
+
+    // Stock pages
+    popularStocks.forEach((stock) => {
+      urls.push({
+        loc: `${baseUrl}/stock/${stock}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.8,
+      })
+
+      // Stock analysis pages
+      urls.push({
+        loc: `${baseUrl}/stock/${stock}/analysis`,
+        lastmod: currentDate,
+        changefreq: "daily",
         priority: 0.7,
+      })
+
+      // Stock news pages
+      urls.push({
+        loc: `${baseUrl}/stock/${stock}/news`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.6,
+      })
+
+      // Stock financials pages
+      urls.push({
+        loc: `${baseUrl}/stock/${stock}/financials`,
+        lastmod: currentDate,
+        changefreq: "weekly",
+        priority: 0.6,
+      })
+    })
+
+    // Sector pages
+    sectors.forEach((sector) => {
+      urls.push({
+        loc: `${baseUrl}/sector/${sector}`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.7,
+      })
+
+      urls.push({
+        loc: `${baseUrl}/sector/${sector}/stocks`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
+      })
+
+      urls.push({
+        loc: `${baseUrl}/sector/${sector}/analysis`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
+      })
+    })
+
+    // Index pages
+    indices.forEach((index) => {
+      urls.push({
+        loc: `${baseUrl}/index/${index}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.8,
+      })
+
+      urls.push({
+        loc: `${baseUrl}/index/${index}/constituents`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.7,
+      })
+
+      urls.push({
+        loc: `${baseUrl}/index/${index}/analysis`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
+      })
+    })
+
+    // Educational content pages
+    educationalPages.forEach((page) => {
+      urls.push({
+        loc: `${baseUrl}/${page}`,
+        lastmod: currentDate,
+        changefreq: "weekly",
+        priority: 0.6,
+      })
+    })
+
+    // Trading tools pages
+    const tradingTools = [
+      "tools/calculator",
+      "tools/screener",
+      "tools/backtester",
+      "tools/scanner",
+      "tools/heatmap",
+      "tools/correlation",
+      "tools/volatility",
+      "tools/momentum",
+    ]
+
+    tradingTools.forEach((tool) => {
+      urls.push({
+        loc: `${baseUrl}/${tool}`,
+        lastmod: currentDate,
+        changefreq: "weekly",
+        priority: 0.5,
+      })
+    })
+
+    // Market data pages
+    const marketDataPages = [
+      "market-data/live-prices",
+      "market-data/gainers-losers",
+      "market-data/most-active",
+      "market-data/52-week-high-low",
+      "market-data/dividend-calendar",
+      "market-data/earnings-calendar",
+      "market-data/ipo-calendar",
+      "market-data/corporate-actions",
+      "market-data/bulk-deals",
+      "market-data/block-deals",
+      "market-data/insider-trading",
+    ]
+
+    marketDataPages.forEach((page) => {
+      urls.push({
+        loc: `${baseUrl}/${page}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.6,
+      })
+    })
+
+    // API documentation pages
+    const apiPages = [
+      "api/docs",
+      "api/authentication",
+      "api/rate-limits",
+      "api/endpoints",
+      "api/websocket",
+      "api/examples",
+      "api/sdks",
+      "api/changelog",
+    ]
+
+    apiPages.forEach((page) => {
+      urls.push({
+        loc: `${baseUrl}/${page}`,
+        lastmod: currentDate,
+        changefreq: "monthly",
+        priority: 0.4,
+      })
+    })
+
+    // Legal and company pages
+    const legalPages = [
+      "about",
+      "contact",
+      "privacy-policy",
+      "terms-of-service",
+      "disclaimer",
+      "risk-disclosure",
+      "refund-policy",
+      "careers",
+    ]
+
+    legalPages.forEach((page) => {
+      urls.push({
+        loc: `${baseUrl}/${page}`,
+        lastmod: currentDate,
+        changefreq: "monthly",
+        priority: 0.3,
       })
     })
 
     // Generate XML
-    const sitemapXML = generateSitemapXML(urls)
+    const sitemapXml = generateSitemapXml(urls)
 
-    return new NextResponse(sitemapXML, {
+    return new NextResponse(sitemapXml, {
       status: 200,
       headers: {
         "Content-Type": "application/xml",
-        "Cache-Control": "public, max-age=3600, s-maxage=3600", // Cache for 1 hour
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400", // Cache for 1 hour, stale for 1 day
+        "X-Robots-Tag": "noindex", // Don't index the sitemap itself
       },
     })
   } catch (error) {
-    console.error("Error generating sitemap:", error)
+    console.error("Sitemap generation error:", error)
 
-    return NextResponse.json({ error: "Failed to generate sitemap" }, { status: 500 })
+    // Return a minimal sitemap on error
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+    const currentDate = new Date().toISOString().split("T")[0]
+
+    const minimalSitemap = generateSitemapXml([
+      {
+        loc: baseUrl,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 1.0,
+      },
+    ])
+
+    return new NextResponse(minimalSitemap, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/xml",
+        "Cache-Control": "public, max-age=300", // Cache for 5 minutes on error
+      },
+    })
   }
 }
 

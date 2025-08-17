@@ -10,8 +10,8 @@ interface HealthStatus {
     database: "connected" | "disconnected" | "unknown"
     redis: "connected" | "disconnected" | "unknown"
     external_apis: {
-      nse: "available" | "unavailable" | "unknown"
       yahoo_finance: "available" | "unavailable" | "unknown"
+      nse: "available" | "unavailable" | "unknown"
       alpha_vantage: "available" | "unavailable" | "unknown"
     }
   }
@@ -35,23 +35,22 @@ interface HealthStatus {
     requests_per_minute: number
     error_rate: number
   }
-  features: {
-    live_data: boolean
-    ai_chat: boolean
-    notifications: boolean
-    portfolio: boolean
-    analytics: boolean
-  }
 }
 
-// Mock function to check database connectivity
-async function checkDatabase(): Promise<"connected" | "disconnected" | "unknown"> {
+// Cache for performance metrics
+const performanceCache = {
+  requests: 0,
+  errors: 0,
+  lastReset: Date.now(),
+}
+
+async function checkDatabaseConnection(): Promise<"connected" | "disconnected" | "unknown"> {
   try {
-    // In a real application, you would check your database connection here
-    // For now, we'll simulate based on environment variables
+    // If DATABASE_URL is configured, attempt connection
     if (process.env.DATABASE_URL) {
-      // Simulate database check
-      return "connected"
+      // This would be replaced with actual database connection check
+      // For now, return unknown since we don't have a database configured
+      return "unknown"
     }
     return "unknown"
   } catch (error) {
@@ -60,13 +59,12 @@ async function checkDatabase(): Promise<"connected" | "disconnected" | "unknown"
   }
 }
 
-// Mock function to check Redis connectivity
-async function checkRedis(): Promise<"connected" | "disconnected" | "unknown"> {
+async function checkRedisConnection(): Promise<"connected" | "disconnected" | "unknown"> {
   try {
-    // In a real application, you would check your Redis connection here
+    // If REDIS_URL is configured, attempt connection
     if (process.env.REDIS_URL) {
-      // Simulate Redis check
-      return "connected"
+      // This would be replaced with actual Redis connection check
+      return "unknown"
     }
     return "unknown"
   } catch (error) {
@@ -75,27 +73,35 @@ async function checkRedis(): Promise<"connected" | "disconnected" | "unknown"> {
   }
 }
 
-// Function to check external API availability
-async function checkExternalAPI(url: string, timeout = 5000): Promise<"available" | "unavailable"> {
+async function checkExternalAPI(url: string): Promise<"available" | "unavailable" | "unknown"> {
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
     const response = await fetch(url, {
       method: "HEAD",
       signal: controller.signal,
+      headers: {
+        "User-Agent": "EChart-HealthCheck/1.0",
+      },
     })
 
     clearTimeout(timeoutId)
-    return response.ok ? "available" : "unavailable"
+
+    if (response.ok || response.status === 405) {
+      // 405 Method Not Allowed is also OK
+      return "available"
+    }
+    return "unavailable"
   } catch (error) {
+    console.error(`External API health check failed for ${url}:`, error)
     return "unavailable"
   }
 }
 
-// Function to get system metrics
 function getSystemMetrics() {
   const memoryUsage = process.memoryUsage()
+  const cpuUsage = process.cpuUsage()
 
   return {
     memory: {
@@ -104,33 +110,29 @@ function getSystemMetrics() {
       percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
     },
     cpu: {
-      usage: Math.round(Math.random() * 100), // Mock CPU usage
+      usage: Math.round((cpuUsage.user + cpuUsage.system) / 1000000), // Convert to milliseconds
     },
     disk: {
-      used: 1024, // Mock disk usage in MB
-      total: 10240, // Mock total disk in MB
-      percentage: 10,
+      used: 0, // Would need additional library to get disk usage
+      total: 0,
+      percentage: 0,
     },
   }
 }
 
-// Function to get performance metrics
-function getPerformanceMetrics() {
-  return {
-    response_time: Math.round(Math.random() * 100 + 50), // Mock response time in ms
-    requests_per_minute: Math.round(Math.random() * 1000 + 100), // Mock RPM
-    error_rate: Math.round(Math.random() * 5 * 100) / 100, // Mock error rate percentage
-  }
-}
+function updatePerformanceMetrics(isError = false) {
+  const now = Date.now()
 
-// Function to get feature flags
-function getFeatureFlags() {
-  return {
-    live_data: process.env.NEXT_PUBLIC_ENABLE_LIVE_DATA === "true",
-    ai_chat: process.env.NEXT_PUBLIC_ENABLE_AI_CHAT === "true",
-    notifications: process.env.NEXT_PUBLIC_ENABLE_NOTIFICATIONS === "true",
-    portfolio: process.env.NEXT_PUBLIC_ENABLE_PORTFOLIO === "true",
-    analytics: process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true",
+  // Reset counters every minute
+  if (now - performanceCache.lastReset > 60000) {
+    performanceCache.requests = 0
+    performanceCache.errors = 0
+    performanceCache.lastReset = now
+  }
+
+  performanceCache.requests++
+  if (isError) {
+    performanceCache.errors++
   }
 }
 
@@ -138,31 +140,36 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now()
 
   try {
+    updatePerformanceMetrics()
+
     // Check all services in parallel
-    const [databaseStatus, redisStatus, nseStatus, yahooStatus, alphaVantageStatus] = await Promise.all([
-      checkDatabase(),
-      checkRedis(),
+    const [databaseStatus, redisStatus, yahooStatus, nseStatus, alphaVantageStatus] = await Promise.all([
+      checkDatabaseConnection(),
+      checkRedisConnection(),
+      checkExternalAPI("https://query1.finance.yahoo.com"),
       checkExternalAPI("https://www.nseindia.com"),
-      checkExternalAPI("https://finance.yahoo.com"),
       checkExternalAPI("https://www.alphavantage.co"),
     ])
 
-    const responseTime = Date.now() - startTime
     const systemMetrics = getSystemMetrics()
-    const performanceMetrics = getPerformanceMetrics()
-    const featureFlags = getFeatureFlags()
+    const responseTime = Date.now() - startTime
+
+    // Calculate performance metrics
+    const requestsPerMinute = performanceCache.requests
+    const errorRate = performanceCache.requests > 0 ? (performanceCache.errors / performanceCache.requests) * 100 : 0
 
     // Determine overall health status
     let overallStatus: "healthy" | "unhealthy" | "degraded" = "healthy"
 
+    // Check if any critical services are down
     if (databaseStatus === "disconnected" || redisStatus === "disconnected") {
       overallStatus = "unhealthy"
     } else if (
-      nseStatus === "unavailable" ||
       yahooStatus === "unavailable" ||
+      nseStatus === "unavailable" ||
       alphaVantageStatus === "unavailable" ||
       systemMetrics.memory.percentage > 90 ||
-      performanceMetrics.error_rate > 5
+      errorRate > 5
     ) {
       overallStatus = "degraded"
     }
@@ -170,27 +177,27 @@ export async function GET(request: NextRequest) {
     const healthStatus: HealthStatus = {
       status: overallStatus,
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
+      uptime: Math.floor(process.uptime()),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
       services: {
         database: databaseStatus,
         redis: redisStatus,
         external_apis: {
-          nse: nseStatus,
           yahoo_finance: yahooStatus,
+          nse: nseStatus,
           alpha_vantage: alphaVantageStatus,
         },
       },
       system: systemMetrics,
       performance: {
-        ...performanceMetrics,
         response_time: responseTime,
+        requests_per_minute: requestsPerMinute,
+        error_rate: Math.round(errorRate * 100) / 100,
       },
-      features: featureFlags,
     }
 
-    // Set appropriate HTTP status code based on health
+    // Set appropriate HTTP status code
     const httpStatus = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503
 
     return NextResponse.json(healthStatus, {
@@ -202,33 +209,33 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Health check failed:", error)
+    updatePerformanceMetrics(true)
+    console.error("Health check error:", error)
 
-    const errorHealthStatus: HealthStatus = {
+    const errorResponse: HealthStatus = {
       status: "unhealthy",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
+      uptime: Math.floor(process.uptime()),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
       services: {
         database: "unknown",
         redis: "unknown",
         external_apis: {
-          nse: "unknown",
           yahoo_finance: "unknown",
+          nse: "unknown",
           alpha_vantage: "unknown",
         },
       },
       system: getSystemMetrics(),
       performance: {
         response_time: Date.now() - startTime,
-        requests_per_minute: 0,
+        requests_per_minute: performanceCache.requests,
         error_rate: 100,
       },
-      features: getFeatureFlags(),
     }
 
-    return NextResponse.json(errorHealthStatus, {
+    return NextResponse.json(errorResponse, {
       status: 503,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",

@@ -1,81 +1,98 @@
 import { NextResponse } from "next/server"
 
 export async function GET() {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
-  const isProduction = process.env.NODE_ENV === "production"
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
+    const isProduction = process.env.NODE_ENV === "production"
 
-  // Generate robots.txt content
-  const robotsContent = `# Robots.txt for EChart Trading Platform
-# Generated on ${new Date().toISOString()}
+    let robotsTxt = ""
 
-# Global rules for all bots
+    if (isProduction) {
+      // Production robots.txt - Allow most crawling with restrictions
+      robotsTxt = `# EChart Trading Platform - Robots.txt
+# Live NSE market data and AI-powered trading insights
+
+# Allow all search engines
 User-agent: *
-${isProduction ? "Allow: /" : "Disallow: /"}
+Allow: /
 
-# Specific rules for search engine bots
+# Disallow sensitive areas
+Disallow: /api/
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /portfolio/
+Disallow: /settings/
+Disallow: /profile/
+Disallow: /account/
+Disallow: /auth/
+Disallow: /login/
+Disallow: /register/
+Disallow: /reset-password/
+Disallow: /verify-email/
+Disallow: /private/
+Disallow: /user/
+Disallow: /_next/
+Disallow: /static/
+Disallow: /*.json$
+Disallow: /*.xml$
+Disallow: /*?*
+Disallow: /search?
+Disallow: /filter?
+
+# Allow important public pages
+Allow: /stock/
+Allow: /sector/
+Allow: /index/
+Allow: /learn/
+Allow: /tools/
+Allow: /market-data/
+Allow: /news/
+Allow: /analysis/
+
+# Specific bot instructions
 User-agent: Googlebot
 Allow: /
 Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
-Crawl-delay: 1
+Crawl-delay: 2
 
 User-agent: Slurp
 Allow: /
 Crawl-delay: 2
 
-# Block access to sensitive areas
-Disallow: /api/
-Disallow: /admin/
-Disallow: /dashboard/private/
-Disallow: /user/
-Disallow: /auth/
-Disallow: /login/
-Disallow: /register/
-Disallow: /profile/
-Disallow: /settings/
-Disallow: /portfolio/private/
-Disallow: /orders/
-Disallow: /transactions/
+User-agent: DuckDuckBot
+Allow: /
+Crawl-delay: 1
 
-# Block access to technical files
-Disallow: /_next/
-Disallow: /static/
-Disallow: /.well-known/
-Disallow: /favicon.ico
-Disallow: /robots.txt
-Disallow: /sitemap.xml
+User-agent: Baiduspider
+Allow: /
+Crawl-delay: 5
 
-# Block access to temporary and cache files
-Disallow: /tmp/
-Disallow: /cache/
-Disallow: /logs/
-Disallow: /*.log$
-Disallow: /*.tmp$
-Disallow: /*.bak$
+User-agent: YandexBot
+Allow: /
+Crawl-delay: 3
 
-# Block access to development and testing files
-Disallow: /test/
-Disallow: /tests/
-Disallow: /dev/
-Disallow: /debug/
-Disallow: /.env
-Disallow: /package.json
-Disallow: /package-lock.json
-Disallow: /yarn.lock
+User-agent: facebookexternalhit
+Allow: /
+Allow: /stock/
+Allow: /sector/
+Allow: /index/
 
-# Block access to version control
-Disallow: /.git/
-Disallow: /.svn/
-Disallow: /.hg/
+User-agent: Twitterbot
+Allow: /
+Allow: /stock/
+Allow: /sector/
+Allow: /index/
 
-# Block access to backup files
-Disallow: /*.sql$
-Disallow: /*.dump$
-Disallow: /*.backup$
+User-agent: LinkedInBot
+Allow: /
+Allow: /stock/
+Allow: /sector/
+Allow: /index/
 
-# Block aggressive bots and scrapers
+# Block aggressive crawlers and scrapers
 User-agent: AhrefsBot
 Disallow: /
 
@@ -97,91 +114,148 @@ Disallow: /
 User-agent: PetalBot
 Disallow: /
 
-# Block AI training bots (optional - uncomment if needed)
-# User-agent: GPTBot
-# Disallow: /
+User-agent: DataForSeoBot
+Disallow: /
 
-# User-agent: ChatGPT-User
-# Disallow: /
+# Block financial data scrapers
+User-agent: *
+Disallow: /api/stock-data/
+Disallow: /api/live-prices/
+Disallow: /api/market-data/
+Disallow: /api/historical/
+Disallow: /api/intraday/
+Disallow: /api/quotes/
 
-# User-agent: CCBot
-# Disallow: /
+# Block AI training crawlers
+User-agent: GPTBot
+Disallow: /
 
-# User-agent: anthropic-ai
-# Disallow: /
+User-agent: ChatGPT-User
+Disallow: /
 
-# User-agent: Claude-Web
-# Disallow: /
+User-agent: CCBot
+Disallow: /
 
-# Allow specific paths for SEO
-Allow: /markets/
-Allow: /stocks/
-Allow: /indices/
-Allow: /sectors/
-Allow: /news/
-Allow: /analysis/
-Allow: /learn/
-Allow: /tools/
-Allow: /about/
-Allow: /contact/
-Allow: /help/
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: YouBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
 
 # Sitemap location
 Sitemap: ${baseUrl}/sitemap.xml
+
+# Additional sitemaps
 Sitemap: ${baseUrl}/api/sitemap
 
-# Additional sitemaps (if you have them)
-# Sitemap: ${baseUrl}/sitemap-stocks.xml
-# Sitemap: ${baseUrl}/sitemap-news.xml
-# Sitemap: ${baseUrl}/sitemap-analysis.xml
+# Crawl delay for all bots (in seconds)
+Crawl-delay: 1
 
-# Host directive (helps with canonicalization)
-Host: ${baseUrl}
+# Host directive (for search engines that support it)
+Host: ${baseUrl.replace("https://", "").replace("http://", "")}
 
-# Request rate (optional - helps prevent server overload)
-Request-rate: 1/10s
+# Clean URLs preference
+Clean-param: utm_source
+Clean-param: utm_medium
+Clean-param: utm_campaign
+Clean-param: utm_term
+Clean-param: utm_content
+Clean-param: fbclid
+Clean-param: gclid
+Clean-param: ref
+Clean-param: source
 
-# Visit time (optional - suggests when to crawl)
-Visit-time: 0600-2200
+# Request rate (requests per second)
+Request-rate: 1/1s
 
-# Cache directive (optional)
-Cache-delay: 3600
+# Visit time (time to wait between requests in seconds)
+Visit-time: 0600-2300
 
-# Comments for developers
-# This robots.txt file is automatically generated
-# Last updated: ${new Date().toISOString()}
-# Environment: ${process.env.NODE_ENV || "development"}
-# Domain: ${baseUrl}
-#
-# For questions about this robots.txt file, contact:
-# Email: support@echart.in
-# Website: ${baseUrl}/contact
-#
-# Trading Platform Features:
-# - Live NSE/BSE market data
-# - Real-time stock prices and charts
-# - Technical and fundamental analysis
-# - Portfolio tracking and management
-# - Market news and insights
-# - AI-powered trading recommendations
-#
-# SEO-friendly URLs:
-# /stocks/[symbol] - Individual stock pages
-# /indices/[index] - Market index pages  
-# /sectors/[sector] - Sector analysis pages
-# /news/[category] - Market news by category
-# /analysis/[type] - Technical analysis tools
-# /learn/[topic] - Educational content
-# /tools/[tool] - Trading calculators and tools
+# Comments for webmasters
+# This robots.txt file is optimized for EChart Trading Platform
+# It allows search engines to index public content while protecting
+# sensitive user data and API endpoints
+# 
+# For questions about crawling permissions, contact: admin@echart.in
+# Last updated: ${new Date().toISOString().split("T")[0]}
+`
+    } else {
+      // Development/staging robots.txt - Block all crawling
+      robotsTxt = `# EChart Trading Platform - Development Environment
+# This is a development/staging environment - crawling is disabled
+
+User-agent: *
+Disallow: /
+
+# Block all search engines in non-production environments
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: Slurp
+Disallow: /
+
+User-agent: DuckDuckBot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: YandexBot
+Disallow: /
+
+# No sitemap for development
+# Sitemap: ${baseUrl}/sitemap.xml
+
+# Development environment notice
+# This is not the production site
+# Production site: https://echart.in
+`
+    }
+
+    return new NextResponse(robotsTxt, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain",
+        "Cache-Control": isProduction
+          ? "public, max-age=86400, stale-while-revalidate=604800" // Cache for 1 day in production
+          : "public, max-age=300", // Cache for 5 minutes in development
+        "X-Robots-Tag": "noindex, nofollow", // Don't index the robots.txt file itself
+      },
+    })
+  } catch (error) {
+    console.error("Robots.txt generation error:", error)
+
+    // Return a safe default robots.txt on error
+    const fallbackRobots = `User-agent: *
+Disallow: /api/
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /portfolio/
+Disallow: /settings/
+
+Sitemap: ${process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"}/sitemap.xml
 `
 
-  return new NextResponse(robotsContent, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/plain",
-      "Cache-Control": "public, max-age=86400, s-maxage=86400", // Cache for 24 hours
-    },
-  })
+    return new NextResponse(fallbackRobots, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain",
+        "Cache-Control": "public, max-age=300", // Short cache on error
+      },
+    })
+  }
 }
 
 // Handle other HTTP methods

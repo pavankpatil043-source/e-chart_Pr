@@ -5,10 +5,9 @@ const nextConfig = {
   poweredByHeader: false,
   generateEtags: false,
   reactStrictMode: true,
-  swcMinify: true,
+  serverExternalPackages: ['sharp'],
   experimental: {
     optimizeCss: true,
-    serverComponentsExternalPackages: ['sharp']
   },
   images: {
     domains: ['echart.in', 'localhost'],
