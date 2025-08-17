@@ -1,41 +1,41 @@
-# 🚀 Deployment Guide for ECHART.IN
+# EChart Trading Platform - Deployment Guide
 
-## Quick Deploy to Vercel (Recommended)
+## 🚀 Quick Start Deployment
 
 ### Prerequisites
 - Node.js 18+ installed
-- Git repository with your code
-- Vercel account (free tier available)
+- Git repository set up
+- Domain `echart.in` configured
 
-### Step 1: Install Vercel CLI
+### 1. Vercel Deployment (Recommended)
+
+#### Step 1: Install Vercel CLI
 \`\`\`bash
 npm install -g vercel
 \`\`\`
 
-### Step 2: Login to Vercel
+#### Step 2: Login to Vercel
 \`\`\`bash
 vercel login
 \`\`\`
 
-### Step 3: Deploy
+#### Step 3: Deploy
 \`\`\`bash
-# Make the deploy script executable
-chmod +x deploy.sh
+# For production deployment
+vercel --prod
 
-# Run deployment
-./deploy.sh
+# For preview deployment
+vercel
 \`\`\`
 
-### Step 4: Configure Custom Domain
-
+#### Step 4: Configure Custom Domain
 1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
 2. Select your project
 3. Go to Settings → Domains
 4. Add `echart.in` and `www.echart.in`
 
-### Step 5: Update DNS Records
-
-Add these DNS records in your domain registrar:
+#### Step 5: Update DNS Records
+Add these DNS records in your domain provider:
 
 \`\`\`
 Type: A
@@ -49,151 +49,85 @@ Value: 76.76.19.61
 TTL: 300
 
 Type: CNAME
-Name: *
+Name: www
 Value: cname.vercel-dns.com
 TTL: 300
 \`\`\`
 
-## Alternative Deployment Options
+### 2. Docker Deployment
 
-### Option 1: Netlify
-1. Connect your GitHub repository
-2. Build command: `npm run build`
-3. Publish directory: `.next`
-4. Add custom domain in site settings
-
-### Option 2: Docker + VPS
+#### Build and Run
 \`\`\`bash
-# Build Docker image
-docker build -t echart-trading .
+# Build the Docker image
+docker build -t echart-trading-platform .
 
-# Run container
-docker run -p 3000:3000 echart-trading
+# Run the container
+docker run -d -p 3000:3000 --name echart-app echart-trading-platform
 \`\`\`
 
-### Option 3: Traditional VPS with PM2
+#### Using Docker Compose
+\`\`\`yaml
+version: '3.8'
+services:
+  echart-app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_URL=https://echart.in
+      - NEXT_PUBLIC_DOMAIN=echart.in
+    restart: unless-stopped
+\`\`\`
+
+### 3. Traditional VPS Deployment
+
+#### Step 1: Server Setup
 \`\`\`bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 18
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
 # Install PM2
-npm install -g pm2
+sudo npm install -g pm2
+\`\`\`
+
+#### Step 2: Deploy Application
+\`\`\`bash
+# Clone repository
+git clone <your-repo-url>
+cd echart-trading-platform
+
+# Install dependencies
+npm ci
 
 # Build application
 npm run build
 
 # Start with PM2
-pm2 start npm --name "echart" -- start
-
-# Setup auto-restart
+pm2 start npm --name "echart-trading" -- start
 pm2 startup
 pm2 save
 \`\`\`
 
-## Environment Variables Setup
-
-1. Copy `.env.example` to `.env.local`
-2. Fill in your API keys and configuration
-3. For production, set these in your hosting platform
-
-## SSL Certificate
-
-- **Vercel**: Automatic SSL (Let's Encrypt)
-- **Netlify**: Automatic SSL
-- **VPS**: Use Certbot for Let's Encrypt
-
-## Performance Optimizations
-
-### Already Configured:
-- ✅ Next.js optimization
-- ✅ Image optimization
-- ✅ Code splitting
-- ✅ Compression
-- ✅ Caching headers
-
-### Additional Optimizations:
-- CDN configuration
-- Database connection pooling
-- Redis caching (optional)
-- Load balancing (for high traffic)
-
-## Monitoring & Analytics
-
-### Built-in Features:
-- Error boundaries
-- Performance monitoring
-- Real-time data tracking
-
-### Optional Integrations:
-- Google Analytics
-- Sentry for error tracking
-- Vercel Analytics
-- Custom monitoring dashboard
-
-## Security Checklist
-
-- ✅ HTTPS enabled
-- ✅ Security headers configured
-- ✅ API rate limiting
-- ✅ Input validation
-- ✅ CORS configuration
-- ✅ Environment variables secured
-
-## Post-Deployment Checklist
-
-1. ✅ Domain resolves correctly
-2. ✅ SSL certificate active
-3. ✅ All pages load properly
-4. ✅ API endpoints working
-5. ✅ Real-time data updating
-6. ✅ Mobile responsiveness
-7. ✅ Performance metrics good
-8. ✅ Error monitoring active
-
-## Troubleshooting
-
-### Common Issues:
-
-**Build Errors:**
-\`\`\`bash
-# Clear cache and rebuild
-rm -rf .next node_modules
-npm install
-npm run build
-\`\`\`
-
-**Domain Not Resolving:**
-- Check DNS propagation (can take 24-48 hours)
-- Verify DNS records are correct
-- Clear browser cache
-
-**API Errors:**
-- Check environment variables
-- Verify API endpoints
-- Check CORS configuration
-
-## Support
-
-For deployment issues:
-- Check Vercel documentation
-- Review build logs
-- Contact hosting provider support
-
-## Backup Strategy
-
-### Automated Backups:
-- Code: Git repository
-- Database: Daily automated backups
-- Assets: CDN with versioning
-
-### Manual Backup:
-\`\`\`bash
-# Export database
-pg_dump echart_db > backup.sql
-
-# Backup uploads
-tar -czf uploads-backup.tar.gz public/uploads/
-\`\`\`
-
----
-
-🎉 **Your ECHART.IN trading platform is now ready for production!**
-
-Visit: https://echart.in
+#### Step 3: Configure Nginx (Optional)
+```nginx
+server {
+    listen 80;
+    server_name echart.in www.echart.in;
+    
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}

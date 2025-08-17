@@ -1,12 +1,6 @@
 {
   "version": 2,
   "name": "echart-trading-platform",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
   "routes": [
     {
       "src": "/api/(.*)",

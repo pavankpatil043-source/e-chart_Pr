@@ -1,4 +1,4 @@
-# Multi-stage build for production optimization
+# Use the official Node.js 18 image as base
 FROM node:18-alpine AS base
 
 # Install dependencies only when needed
@@ -8,9 +8,11 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
+COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 RUN \
-  if [ -f package-lock.json ]; then npm ci --only=production; \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \
   fi
 
@@ -24,8 +26,6 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_PUBLIC_APP_URL=https://echart.in
 ENV NEXT_PUBLIC_DOMAIN=echart.in
-
-# Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build the application
@@ -42,7 +42,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy public assets
+# Copy the public folder
 COPY --from=builder /app/public ./public
 
 # Set the correct permission for prerender cache
@@ -54,10 +54,8 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Switch to non-root user
 USER nextjs
 
-# Expose port
 EXPOSE 3000
 
 ENV PORT=3000
@@ -67,5 +65,4 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Start the application
 CMD ["node", "server.js"]
