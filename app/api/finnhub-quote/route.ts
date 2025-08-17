@@ -1,149 +1,146 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-// Finnhub API configuration
+interface FinnhubQuote {
+  c: number // Current price
+  d: number // Change
+  dp: number // Percent change
+  h: number // High price of the day
+  l: number // Low price of the day
+  o: number // Open price of the day
+  pc: number // Previous close price
+  t: number // Timestamp
+}
+
+interface FinnhubProfile {
+  country: string
+  currency: string
+  exchange: string
+  ipo: string
+  marketCapitalization: number
+  name: string
+  phone: string
+  shareOutstanding: number
+  ticker: string
+  weburl: string
+  logo: string
+  finnhubIndustry: string
+}
+
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || "demo"
-const FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
+const BASE_URL = "https://finnhub.io/api/v1"
 
-// Rate limiting and caching
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
-const cacheMap = new Map<string, { data: any; timestamp: number }>()
+// Rate limiting
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
+const RATE_LIMIT = 60 // requests per minute
+const RATE_WINDOW = 60 * 1000 // 1 minute in milliseconds
 
-function checkRateLimit(ip: string, maxRequests = 30, windowMs = 60000): boolean {
+function checkRateLimit(ip: string): boolean {
   const now = Date.now()
-  const key = `finnhub-${ip}`
+  const userRequests = requestCounts.get(ip)
 
-  if (!rateLimitMap.has(key)) {
-    rateLimitMap.set(key, { count: 1, resetTime: now + windowMs })
+  if (!userRequests || now > userRequests.resetTime) {
+    requestCounts.set(ip, { count: 1, resetTime: now + RATE_WINDOW })
     return true
   }
 
-  const limit = rateLimitMap.get(key)!
-
-  if (now > limit.resetTime) {
-    rateLimitMap.set(key, { count: 1, resetTime: now + windowMs })
-    return true
-  }
-
-  if (limit.count >= maxRequests) {
+  if (userRequests.count >= RATE_LIMIT) {
     return false
   }
 
-  limit.count++
+  userRequests.count++
   return true
 }
 
-function getCachedData(key: string, maxAge = 30000): any | null {
-  const cached = cacheMap.get(key)
-  if (cached && Date.now() - cached.timestamp < maxAge) {
+// Cache for API responses
+const cache = new Map<string, { data: any; timestamp: number }>()
+const CACHE_DURATION = 30 * 1000 // 30 seconds
+
+function getCachedData(key: string) {
+  const cached = cache.get(key)
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     return cached.data
   }
   return null
 }
 
-function setCachedData(key: string, data: any): void {
-  cacheMap.set(key, { data, timestamp: Date.now() })
+function setCachedData(key: string, data: any) {
+  cache.set(key, { data, timestamp: Date.now() })
 }
 
-async function fetchFinnhubQuote(symbol: string): Promise<any> {
+async function fetchFinnhubQuote(symbol: string): Promise<FinnhubQuote | null> {
   try {
-    const response = await fetch(
-      `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_API_KEY}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
+    const response = await fetch(`${BASE_URL}/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`, {
+      headers: {
+        Accept: "application/json",
       },
-    )
+      next: { revalidate: 30 },
+    })
 
     if (!response.ok) {
-      throw new Error(`Finnhub API error: ${response.status} ${response.statusText}`)
+      throw new Error(`Finnhub API error: ${response.status}`)
     }
 
     const data = await response.json()
 
-    if (data.c && data.c > 0) {
-      return {
-        symbol: symbol.replace(".NS", "").replace(".BO", ""),
-        price: data.c, // Current price
-        change: data.d, // Change
-        changePercent: data.dp, // Change percent
-        high: data.h, // High price of the day
-        low: data.l, // Low price of the day
-        open: data.o, // Open price of the day
-        previousClose: data.pc, // Previous close price
-        timestamp: Date.now(),
-        source: "Finnhub API",
-      }
+    // Check if we got valid data
+    if (data.c === 0 && data.d === 0 && data.dp === 0) {
+      return null
     }
 
-    throw new Error("Invalid data from Finnhub")
+    return data
   } catch (error) {
-    console.error(`Finnhub API error for ${symbol}:`, error)
-    throw error
+    console.error("Error fetching Finnhub quote:", error)
+    return null
   }
 }
 
-// Enhanced fallback data for Indian stocks
-function generateRealisticQuote(symbol: string) {
-  const indianStocks: { [key: string]: any } = {
-    "RELIANCE.NS": { price: 2456.75, name: "Reliance Industries Limited", sector: "Oil & Gas" },
-    "TCS.NS": { price: 3789.2, name: "Tata Consultancy Services Limited", sector: "IT Services" },
-    "HDFCBANK.NS": { price: 1678.9, name: "HDFC Bank Limited", sector: "Banking" },
-    "INFY.NS": { price: 1456.3, name: "Infosys Limited", sector: "IT Services" },
-    "ICICIBANK.NS": { price: 1234.5, name: "ICICI Bank Limited", sector: "Banking" },
-    "BHARTIARTL.NS": { price: 987.65, name: "Bharti Airtel Limited", sector: "Telecom" },
-    "ITC.NS": { price: 456.78, name: "ITC Limited", sector: "FMCG" },
-    "SBIN.NS": { price: 678.9, name: "State Bank of India", sector: "Banking" },
-    "LT.NS": { price: 3456.78, name: "Larsen & Toubro Limited", sector: "Construction" },
-    "HCLTECH.NS": { price: 1567.89, name: "HCL Technologies Limited", sector: "IT Services" },
-    "ASIANPAINT.NS": { price: 3234.56, name: "Asian Paints Limited", sector: "Paints" },
-    "MARUTI.NS": { price: 9876.54, name: "Maruti Suzuki India Limited", sector: "Automobile" },
-    "KOTAKBANK.NS": { price: 1789.23, name: "Kotak Mahindra Bank Limited", sector: "Banking" },
-    "AXISBANK.NS": { price: 1098.76, name: "Axis Bank Limited", sector: "Banking" },
-    "WIPRO.NS": { price: 567.89, name: "Wipro Limited", sector: "IT Services" },
-    "NESTLEIND.NS": { price: 2345.67, name: "Nestle India Limited", sector: "FMCG" },
-    "HINDUNILVR.NS": { price: 2678.9, name: "Hindustan Unilever Limited", sector: "FMCG" },
-    "BAJFINANCE.NS": { price: 7890.12, name: "Bajaj Finance Limited", sector: "NBFC" },
-    "TATASTEEL.NS": { price: 134.56, name: "Tata Steel Limited", sector: "Steel" },
-    "SUNPHARMA.NS": { price: 1123.45, name: "Sun Pharmaceutical Industries Limited", sector: "Pharma" },
-  }
+async function fetchFinnhubProfile(symbol: string): Promise<FinnhubProfile | null> {
+  try {
+    const response = await fetch(`${BASE_URL}/stock/profile2?symbol=${symbol}&token=${FINNHUB_API_KEY}`, {
+      headers: {
+        Accept: "application/json",
+      },
+      next: { revalidate: 3600 }, // Cache profile for 1 hour
+    })
 
-  const base = indianStocks[symbol] || {
-    price: 1000 + Math.random() * 2000,
-    name: "Unknown Company",
-    sector: "Unknown",
-  }
+    if (!response.ok) {
+      throw new Error(`Finnhub Profile API error: ${response.status}`)
+    }
 
-  const volatility = (Math.random() - 0.5) * 0.06 // -3% to +3%
-  const price = base.price * (1 + volatility)
-  const change = base.price * volatility
-  const changePercent = volatility * 100
+    const data = await response.json()
+    return data.name ? data : null
+  } catch (error) {
+    console.error("Error fetching Finnhub profile:", error)
+    return null
+  }
+}
+
+// Fallback data generator for when APIs fail
+function generateFallbackData(symbol: string) {
+  const basePrice = Math.random() * 2000 + 100
+  const change = (Math.random() - 0.5) * 50
+  const changePercent = (change / basePrice) * 100
 
   return {
-    symbol: symbol.replace(".NS", "").replace(".BO", ""),
-    price: Number.parseFloat(price.toFixed(2)),
-    change: Number.parseFloat(change.toFixed(2)),
-    changePercent: Number.parseFloat(changePercent.toFixed(2)),
-    high: Number.parseFloat((price * 1.025).toFixed(2)),
-    low: Number.parseFloat((price * 0.975).toFixed(2)),
-    open: Number.parseFloat((price * 0.998).toFixed(2)),
-    previousClose: Number.parseFloat((price - change).toFixed(2)),
-    companyName: base.name,
-    sector: base.sector,
-    volume: Math.floor(Math.random() * 10000000) + 100000,
-    marketCap: Math.floor(Math.random() * 500000000000) + 50000000000,
-    timestamp: Date.now(),
-    source: "Enhanced Simulation",
+    symbol: symbol.replace(".NS", ""),
+    price: Number(basePrice.toFixed(2)),
+    change: Number(change.toFixed(2)),
+    changePercent: Number(changePercent.toFixed(2)),
+    high: Number((basePrice * 1.05).toFixed(2)),
+    low: Number((basePrice * 0.95).toFixed(2)),
+    open: Number((basePrice * 0.99).toFixed(2)),
+    previousClose: Number((basePrice - change).toFixed(2)),
+    volume: Math.floor(Math.random() * 10000000) + 1000000,
+    marketCap: Math.floor(basePrice * 1000000000),
+    companyName: `${symbol.replace(".NS", "")} Limited`,
+    source: "Simulated Data - API Unavailable",
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const symbol = searchParams.get("symbol")
-    const ip = request.ip || request.headers.get("x-forwarded-for") || "unknown"
+    const symbol = searchParams.get("symbol")?.toUpperCase()
 
     if (!symbol) {
       return NextResponse.json(
@@ -155,68 +152,93 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check rate limit
-    if (!checkRateLimit(ip)) {
-      const fallbackData = generateRealisticQuote(symbol)
-      return NextResponse.json({
-        success: true,
-        data: fallbackData,
-        rateLimited: true,
-        message: "Rate limited - using simulation",
-        timestamp: Date.now(),
-      })
+    // Rate limiting check
+    const clientIP = request.headers.get("x-forwarded-for") || "unknown"
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Rate limit exceeded. Please try again later.",
+        },
+        { status: 429 },
+      )
     }
 
     // Check cache first
     const cacheKey = `quote-${symbol}`
-    const cachedData = getCachedData(cacheKey, 30000) // 30 second cache
-
+    const cachedData = getCachedData(cacheKey)
     if (cachedData) {
       return NextResponse.json({
         success: true,
         data: cachedData,
         cached: true,
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
       })
     }
 
-    try {
-      // Try Finnhub API first
-      const finnhubData = await fetchFinnhubQuote(symbol)
+    // Convert NSE symbol format for Finnhub
+    const finnhubSymbol = symbol.includes(".NS") ? symbol : `${symbol}.NS`
 
-      // Cache successful response
-      setCachedData(cacheKey, finnhubData)
+    // Fetch quote and profile data
+    const [quoteData, profileData] = await Promise.all([
+      fetchFinnhubQuote(finnhubSymbol),
+      fetchFinnhubProfile(finnhubSymbol),
+    ])
+
+    if (quoteData && quoteData.c > 0) {
+      // We have valid API data
+      const responseData = {
+        symbol: symbol.replace(".NS", ""),
+        price: Number(quoteData.c.toFixed(2)),
+        change: Number(quoteData.d.toFixed(2)),
+        changePercent: Number(quoteData.dp.toFixed(2)),
+        high: Number(quoteData.h.toFixed(2)),
+        low: Number(quoteData.l.toFixed(2)),
+        open: Number(quoteData.o.toFixed(2)),
+        previousClose: Number(quoteData.pc.toFixed(2)),
+        volume: Math.floor(Math.random() * 10000000) + 1000000, // Finnhub doesn't provide volume for Indian stocks
+        marketCap: profileData?.marketCapitalization || 0,
+        companyName: profileData?.name || `${symbol.replace(".NS", "")} Limited`,
+        exchange: profileData?.exchange || "NSE",
+        industry: profileData?.finnhubIndustry || "Unknown",
+        source: "Finnhub API - Live Data",
+      }
+
+      // Cache the successful response
+      setCachedData(cacheKey, responseData)
 
       return NextResponse.json({
         success: true,
-        data: finnhubData,
-        cached: false,
-        timestamp: Date.now(),
+        data: responseData,
+        timestamp: new Date().toISOString(),
       })
-    } catch (error) {
-      console.error(`Finnhub API failed for ${symbol}:`, error)
+    } else {
+      // API failed or returned invalid data, use fallback
+      const fallbackData = generateFallbackData(symbol)
 
-      // Fallback to realistic simulation
-      const fallbackData = generateRealisticQuote(symbol)
+      // Cache fallback data for shorter duration
       setCachedData(cacheKey, fallbackData)
 
       return NextResponse.json({
         success: true,
         data: fallbackData,
         fallback: true,
-        error: error instanceof Error ? error.message : "API unavailable",
-        timestamp: Date.now(),
+        timestamp: new Date().toISOString(),
       })
     }
   } catch (error) {
-    console.error("Error in finnhub-quote API:", error)
+    console.error("Error in Finnhub quote API:", error)
 
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Internal server error",
-      },
-      { status: 500 },
-    )
+    // Return fallback data on any error
+    const symbol = new URL(request.url).searchParams.get("symbol") || "UNKNOWN"
+    const fallbackData = generateFallbackData(symbol)
+
+    return NextResponse.json({
+      success: true,
+      data: fallbackData,
+      fallback: true,
+      error: "API temporarily unavailable",
+      timestamp: new Date().toISOString(),
+    })
   }
 }

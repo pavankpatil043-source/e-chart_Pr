@@ -1,419 +1,418 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-// NewsAPI configuration
+interface NewsArticle {
+  id: string
+  title: string
+  description: string
+  url: string
+  source: string
+  publishedAt: string
+  sentiment: "positive" | "negative" | "neutral"
+  category: string
+  imageUrl?: string
+  author?: string
+}
+
 const NEWS_API_KEY = process.env.NEWS_API_KEY || "demo"
-const NEWS_API_BASE_URL = "https://newsapi.org/v2"
-
-// Finnhub News API configuration
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || "demo"
-const FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
 
-// Rate limiting and caching
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
-const cacheMap = new Map<string, { data: any; timestamp: number }>()
+// Rate limiting
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
+const RATE_LIMIT = 30 // requests per minute
+const RATE_WINDOW = 60 * 1000 // 1 minute
 
-function checkRateLimit(ip: string, maxRequests = 20, windowMs = 60000): boolean {
+function checkRateLimit(ip: string): boolean {
   const now = Date.now()
-  const key = `news-${ip}`
+  const userRequests = requestCounts.get(ip)
 
-  if (!rateLimitMap.has(key)) {
-    rateLimitMap.set(key, { count: 1, resetTime: now + windowMs })
+  if (!userRequests || now > userRequests.resetTime) {
+    requestCounts.set(ip, { count: 1, resetTime: now + RATE_WINDOW })
     return true
   }
 
-  const limit = rateLimitMap.get(key)!
-
-  if (now > limit.resetTime) {
-    rateLimitMap.set(key, { count: 1, resetTime: now + windowMs })
-    return true
-  }
-
-  if (limit.count >= maxRequests) {
+  if (userRequests.count >= RATE_LIMIT) {
     return false
   }
 
-  limit.count++
+  userRequests.count++
   return true
 }
 
-function getCachedData(key: string, maxAge = 300000): any | null {
-  // 5 minute cache for news
-  const cached = cacheMap.get(key)
-  if (cached && Date.now() - cached.timestamp < maxAge) {
+// Cache for news data
+const cache = new Map<string, { data: NewsArticle[]; timestamp: number }>()
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
+function getCachedNews(key: string): NewsArticle[] | null {
+  const cached = cache.get(key)
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     return cached.data
   }
   return null
 }
 
-function setCachedData(key: string, data: any): void {
-  cacheMap.set(key, { data, timestamp: Date.now() })
-}
-
-// Fetch news from NewsAPI
-async function fetchNewsAPI(): Promise<any[]> {
-  try {
-    const response = await fetch(
-      `${NEWS_API_BASE_URL}/everything?q=(NSE OR BSE OR "Indian stock market" OR "Indian economy" OR "Indian finance")&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWS_API_KEY}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`NewsAPI error: ${response.status} ${response.statusText}`)
-    }
-
-    const data = await response.json()
-
-    if (data.articles && Array.isArray(data.articles)) {
-      return data.articles.map((article: any) => ({
-        id: `newsapi-${Date.now()}-${Math.random()}`,
-        title: article.title,
-        summary: article.description || article.content?.substring(0, 200) + "...",
-        url: article.url,
-        source: article.source?.name || "NewsAPI",
-        publishedAt: article.publishedAt,
-        sentiment: analyzeSentiment(article.title + " " + (article.description || "")),
-        category: categorizeNews(article.title + " " + (article.description || "")),
-        region: "National",
-        imageUrl: article.urlToImage,
-      }))
-    }
-
-    return []
-  } catch (error) {
-    console.error("NewsAPI error:", error)
-    throw error
-  }
-}
-
-// Fetch news from Finnhub
-async function fetchFinnhubNews(): Promise<any[]> {
-  try {
-    const response = await fetch(`${FINNHUB_BASE_URL}/news?category=general&token=${FINNHUB_API_KEY}`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(10000),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Finnhub News API error: ${response.status} ${response.statusText}`)
-    }
-
-    const data = await response.json()
-
-    if (Array.isArray(data)) {
-      return data.slice(0, 15).map((article: any) => ({
-        id: `finnhub-${article.id || Date.now()}-${Math.random()}`,
-        title: article.headline,
-        summary: article.summary || article.headline,
-        url: article.url,
-        source: article.source || "Finnhub",
-        publishedAt: new Date(article.datetime * 1000).toISOString(),
-        sentiment: analyzeSentiment(article.headline + " " + (article.summary || "")),
-        category: categorizeNews(article.headline + " " + (article.summary || "")),
-        region: "International",
-        imageUrl: article.image,
-      }))
-    }
-
-    return []
-  } catch (error) {
-    console.error("Finnhub News API error:", error)
-    throw error
-  }
+function setCachedNews(key: string, data: NewsArticle[]) {
+  cache.set(key, { data, timestamp: Date.now() })
 }
 
 // Simple sentiment analysis
 function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
   const positiveWords = [
     "gain",
-    "rise",
+    "gains",
     "up",
+    "rise",
+    "rises",
     "bull",
+    "bullish",
     "growth",
     "profit",
+    "profits",
     "surge",
+    "soar",
     "rally",
     "boost",
     "strong",
-    "high",
-    "increase",
     "positive",
     "good",
+    "excellent",
     "success",
-    "win",
+    "breakthrough",
+    "milestone",
+    "achievement",
+    "record",
+    "high",
+    "peak",
+    "outperform",
   ]
+
   const negativeWords = [
     "fall",
-    "drop",
+    "falls",
     "down",
+    "drop",
+    "drops",
     "bear",
+    "bearish",
     "loss",
+    "losses",
     "decline",
     "crash",
+    "plunge",
+    "slump",
     "weak",
-    "low",
-    "decrease",
     "negative",
     "bad",
-    "fail",
+    "poor",
     "concern",
     "worry",
     "risk",
+    "threat",
+    "crisis",
+    "problem",
+    "issue",
+    "low",
+    "bottom",
+    "underperform",
   ]
 
   const lowerText = text.toLowerCase()
-  const positiveCount = positiveWords.filter((word) => lowerText.includes(word)).length
-  const negativeCount = negativeWords.filter((word) => lowerText.includes(word)).length
+  let positiveScore = 0
+  let negativeScore = 0
 
-  if (positiveCount > negativeCount) return "positive"
-  if (negativeCount > positiveCount) return "negative"
+  positiveWords.forEach((word) => {
+    if (lowerText.includes(word)) positiveScore++
+  })
+
+  negativeWords.forEach((word) => {
+    if (lowerText.includes(word)) negativeScore++
+  })
+
+  if (positiveScore > negativeScore) return "positive"
+  if (negativeScore > positiveScore) return "negative"
   return "neutral"
 }
 
 // Categorize news
-function categorizeNews(text: string): string {
-  const lowerText = text.toLowerCase()
+function categorizeNews(title: string, description: string): string {
+  const text = `${title} ${description}`.toLowerCase()
 
-  if (lowerText.includes("bank") || lowerText.includes("finance") || lowerText.includes("loan")) return "Banking"
-  if (lowerText.includes("it") || lowerText.includes("tech") || lowerText.includes("software")) return "Technology"
-  if (lowerText.includes("pharma") || lowerText.includes("drug") || lowerText.includes("medicine"))
-    return "Pharmaceuticals"
-  if (lowerText.includes("auto") || lowerText.includes("car") || lowerText.includes("vehicle")) return "Automotive"
-  if (lowerText.includes("oil") || lowerText.includes("gas") || lowerText.includes("energy")) return "Energy"
-  if (lowerText.includes("steel") || lowerText.includes("metal") || lowerText.includes("mining")) return "Metals"
-  if (lowerText.includes("fmcg") || lowerText.includes("consumer")) return "FMCG"
-  if (lowerText.includes("real estate") || lowerText.includes("property")) return "Real Estate"
-  if (lowerText.includes("telecom") || lowerText.includes("mobile")) return "Telecom"
-
-  return "Market"
+  if (text.includes("bank") || text.includes("finance") || text.includes("loan") || text.includes("credit")) {
+    return "Banking"
+  }
+  if (text.includes("tech") || text.includes("it") || text.includes("software") || text.includes("digital")) {
+    return "Technology"
+  }
+  if (text.includes("pharma") || text.includes("drug") || text.includes("medicine") || text.includes("health")) {
+    return "Healthcare"
+  }
+  if (text.includes("auto") || text.includes("car") || text.includes("vehicle") || text.includes("motor")) {
+    return "Automobile"
+  }
+  if (text.includes("oil") || text.includes("gas") || text.includes("energy") || text.includes("power")) {
+    return "Energy"
+  }
+  if (text.includes("rbi") || text.includes("policy") || text.includes("government") || text.includes("regulation")) {
+    return "Policy"
+  }
+  if (text.includes("market") || text.includes("stock") || text.includes("share") || text.includes("trading")) {
+    return "Market"
+  }
+  return "General"
 }
 
-// Generate curated Indian financial news as fallback
-function generateCuratedNews(): any[] {
-  const newsTemplates = [
+async function fetchNewsAPI(): Promise<NewsArticle[]> {
+  try {
+    const queries = [
+      "NSE India stock market",
+      "BSE India financial",
+      "Indian economy business",
+      "RBI monetary policy",
+      "Indian banking sector",
+    ]
+
+    const randomQuery = queries[Math.floor(Math.random() * queries.length)]
+
+    const response = await fetch(
+      `https://newsapi.org/v2/everything?q=${encodeURIComponent(randomQuery)}&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWS_API_KEY}`,
+      {
+        headers: {
+          "User-Agent": "EChart-Pro/1.0",
+        },
+        next: { revalidate: 300 }, // 5 minutes
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(`NewsAPI error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    if (!data.articles || !Array.isArray(data.articles)) {
+      return []
+    }
+
+    return data.articles
+      .filter((article: any) => article.title && article.description && article.url)
+      .slice(0, 15)
+      .map((article: any, index: number) => ({
+        id: `newsapi-${Date.now()}-${index}`,
+        title: article.title,
+        description: article.description,
+        url: article.url,
+        source: article.source?.name || "NewsAPI",
+        publishedAt: article.publishedAt,
+        sentiment: analyzeSentiment(`${article.title} ${article.description}`),
+        category: categorizeNews(article.title, article.description),
+        imageUrl: article.urlToImage,
+        author: article.author,
+      }))
+  } catch (error) {
+    console.error("Error fetching NewsAPI:", error)
+    return []
+  }
+}
+
+async function fetchFinnhubNews(): Promise<NewsArticle[]> {
+  try {
+    const response = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_API_KEY}`, {
+      headers: {
+        Accept: "application/json",
+      },
+      next: { revalidate: 300 },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Finnhub News API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    if (!Array.isArray(data)) {
+      return []
+    }
+
+    return data
+      .filter((article: any) => article.headline && article.summary && article.url)
+      .slice(0, 10)
+      .map((article: any, index: number) => ({
+        id: `finnhub-${Date.now()}-${index}`,
+        title: article.headline,
+        description: article.summary,
+        url: article.url,
+        source: article.source || "Finnhub",
+        publishedAt: new Date(article.datetime * 1000).toISOString(),
+        sentiment: analyzeSentiment(`${article.headline} ${article.summary}`),
+        category: categorizeNews(article.headline, article.summary),
+        imageUrl: article.image,
+      }))
+  } catch (error) {
+    console.error("Error fetching Finnhub news:", error)
+    return []
+  }
+}
+
+// Generate fallback news when APIs fail
+function generateFallbackNews(): NewsArticle[] {
+  const fallbackArticles = [
     {
-      title: "Nifty 50 Hits Fresh All-Time High on Strong FII Inflows",
-      summary:
-        "Indian benchmark indices surge to record levels as foreign institutional investors pump in ₹4,200 crores, boosting market sentiment across all sectors.",
-      source: "Economic Times",
+      id: "fallback-1",
+      title: "NSE Nifty 50 Shows Strong Performance Amid Market Volatility",
+      description:
+        "The benchmark Nifty 50 index demonstrated resilience today with banking and IT sectors leading the gains. Market experts suggest continued optimism despite global uncertainties.",
+      url: "#",
+      source: "Market Simulation",
+      publishedAt: new Date().toISOString(),
       sentiment: "positive" as const,
       category: "Market",
-      region: "National",
     },
     {
-      title: "RBI Maintains Repo Rate at 6.5%, Signals Cautious Approach",
-      summary:
-        "Reserve Bank of India keeps policy rates unchanged while maintaining focus on inflation management and supporting economic growth recovery.",
-      source: "Business Standard",
+      id: "fallback-2",
+      title: "RBI Monetary Policy Committee Meeting Scheduled Next Week",
+      description:
+        "The Reserve Bank of India is expected to announce key policy decisions that could impact interest rates and market liquidity. Analysts are closely watching for inflation targets.",
+      url: "#",
+      source: "Economic Times Simulation",
+      publishedAt: new Date(Date.now() - 3600000).toISOString(),
       sentiment: "neutral" as const,
       category: "Policy",
-      region: "National",
     },
     {
-      title: "IT Sector Shows Resilience with Strong Q3 Earnings",
-      summary:
-        "Major IT services companies including TCS, Infosys report robust quarterly results driven by digital transformation demand from global clients.",
-      source: "Moneycontrol",
+      id: "fallback-3",
+      title: "Indian IT Sector Sees Increased Demand for Digital Services",
+      description:
+        "Major IT companies report strong quarterly results driven by digital transformation projects. The sector continues to benefit from global technology adoption trends.",
+      url: "#",
+      source: "Business Standard Simulation",
+      publishedAt: new Date(Date.now() - 7200000).toISOString(),
       sentiment: "positive" as const,
       category: "Technology",
-      region: "National",
     },
     {
-      title: "Banking Sector NPAs Decline to Multi-Year Lows",
-      summary:
-        "Private and public sector banks report significant improvement in asset quality with non-performing assets falling to lowest levels in five years.",
-      source: "Mint",
-      sentiment: "positive" as const,
-      category: "Banking",
-      region: "National",
-    },
-    {
-      title: "Auto Sector Recovery Gains Momentum with Festive Demand",
-      summary:
-        "Automobile manufacturers witness strong sales growth during festive season with two-wheeler and passenger vehicle segments leading the recovery.",
-      source: "BloombergQuint",
-      sentiment: "positive" as const,
-      category: "Automotive",
-      region: "National",
-    },
-    {
-      title: "Pharma Exports Surge 22% on Global Generic Drug Demand",
-      summary:
-        "Indian pharmaceutical companies benefit from increased international demand for generic medicines and active pharmaceutical ingredients.",
-      source: "Financial Express",
-      sentiment: "positive" as const,
-      category: "Pharmaceuticals",
-      region: "National",
-    },
-    {
-      title: "Crude Oil Price Volatility Impacts Energy Sector Margins",
-      summary:
-        "Oil marketing companies face margin pressure as Brent crude price fluctuations affect refining economics and downstream operations.",
-      source: "Reuters India",
+      id: "fallback-4",
+      title: "Banking Sector Faces Headwinds from Rising NPAs",
+      description:
+        "Several public sector banks report concerns over non-performing assets as economic recovery remains uneven across sectors. Credit growth shows mixed signals.",
+      url: "#",
+      source: "Financial Express Simulation",
+      publishedAt: new Date(Date.now() - 10800000).toISOString(),
       sentiment: "negative" as const,
-      category: "Energy",
-      region: "National",
+      category: "Banking",
     },
     {
-      title: "Digital Payment Adoption Accelerates Post-Pandemic",
-      summary:
-        "Fintech companies report exponential growth in digital payment transactions with UPI processing over 10 billion transactions monthly.",
-      source: "CNBC-TV18",
+      id: "fallback-5",
+      title: "Pharmaceutical Companies Boost R&D Investment",
+      description:
+        "Indian pharma giants announce increased spending on research and development, focusing on innovative drug discovery and biosimilar development for global markets.",
+      url: "#",
+      source: "Mint Simulation",
+      publishedAt: new Date(Date.now() - 14400000).toISOString(),
       sentiment: "positive" as const,
-      category: "Fintech",
-      region: "National",
-    },
-    {
-      title: "Green Energy Investments Reach Record High in India",
-      summary:
-        "Renewable energy sector attracts unprecedented investments with solar and wind projects receiving over $15 billion in funding commitments.",
-      source: "Clean Energy News",
-      sentiment: "positive" as const,
-      category: "Energy",
-      region: "National",
-    },
-    {
-      title: "Real Estate Sector Shows Signs of Recovery in Major Cities",
-      summary:
-        "Property markets in Mumbai, Delhi, and Bangalore witness increased buyer interest and price stabilization after prolonged correction.",
-      source: "Property Times",
-      sentiment: "positive" as const,
-      category: "Real Estate",
-      region: "National",
+      category: "Healthcare",
     },
   ]
 
-  return newsTemplates.map((template, index) => ({
-    id: `curated-${Date.now()}-${index}`,
-    ...template,
-    url: `https://example.com/news/${index}`,
-    publishedAt: new Date(Date.now() - Math.random() * 3600000 * 12).toISOString(), // Random time within last 12 hours
-    imageUrl: null,
-  }))
+  return fallbackArticles
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const category = searchParams.get("category")
-    const sentiment = searchParams.get("sentiment")
-    const limit = Number.parseInt(searchParams.get("limit") || "20")
-    const ip = request.ip || request.headers.get("x-forwarded-for") || "unknown"
+    const category = searchParams.get("category") || "all"
+    const sentiment = searchParams.get("sentiment") || "all"
 
-    // Check rate limit
-    if (!checkRateLimit(ip)) {
-      const fallbackNews = generateCuratedNews().slice(0, limit)
-      return NextResponse.json({
-        success: true,
-        articles: fallbackNews,
-        rateLimited: true,
-        message: "Rate limited - using curated news",
-        timestamp: Date.now(),
-        source: "Curated Indian Financial News",
-        totalResults: fallbackNews.length,
-      })
+    // Rate limiting check
+    const clientIP = request.headers.get("x-forwarded-for") || "unknown"
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Rate limit exceeded. Please try again later.",
+        },
+        { status: 429 },
+      )
     }
 
     // Check cache first
-    const cacheKey = `news-${category || "all"}-${sentiment || "all"}-${limit}`
-    const cachedData = getCachedData(cacheKey, 300000) // 5 minute cache
-
-    if (cachedData) {
+    const cacheKey = `news-${category}-${sentiment}`
+    const cachedNews = getCachedNews(cacheKey)
+    if (cachedNews) {
       return NextResponse.json({
         success: true,
-        articles: cachedData,
+        data: cachedNews,
         cached: true,
-        timestamp: Date.now(),
-        source: "Cached Financial News",
-        totalResults: cachedData.length,
+        count: cachedNews.length,
+        timestamp: new Date().toISOString(),
       })
     }
 
-    let allArticles: any[] = []
+    // Fetch from multiple sources
+    const [newsApiArticles, finnhubArticles] = await Promise.all([fetchNewsAPI(), fetchFinnhubNews()])
 
-    try {
-      // Try to fetch from multiple sources
-      const newsPromises = []
+    // Combine and deduplicate articles
+    let allArticles = [...newsApiArticles, ...finnhubArticles]
 
-      if (NEWS_API_KEY !== "demo") {
-        newsPromises.push(fetchNewsAPI())
-      }
-
-      if (FINNHUB_API_KEY !== "demo") {
-        newsPromises.push(fetchFinnhubNews())
-      }
-
-      const results = await Promise.allSettled(newsPromises)
-
-      results.forEach((result) => {
-        if (result.status === "fulfilled" && Array.isArray(result.value)) {
-          allArticles.push(...result.value)
-        }
-      })
-
-      // If no articles from APIs, use curated news
-      if (allArticles.length === 0) {
-        allArticles = generateCuratedNews()
-      }
-    } catch (error) {
-      console.error("Error fetching news from APIs:", error)
-      allArticles = generateCuratedNews()
+    // If no articles from APIs, use fallback
+    if (allArticles.length === 0) {
+      allArticles = generateFallbackNews()
     }
 
-    // Filter by category
-    if (category && category !== "all") {
-      allArticles = allArticles.filter((article) => article.category.toLowerCase().includes(category.toLowerCase()))
+    // Remove duplicates based on title similarity
+    const uniqueArticles = allArticles.filter(
+      (article, index, self) =>
+        index ===
+        self.findIndex((a) => a.title.toLowerCase().substring(0, 50) === article.title.toLowerCase().substring(0, 50)),
+    )
+
+    // Apply filters
+    let filteredArticles = uniqueArticles
+
+    if (category !== "all") {
+      filteredArticles = filteredArticles.filter((article) => article.category.toLowerCase() === category.toLowerCase())
     }
 
-    // Filter by sentiment
-    if (sentiment && sentiment !== "all") {
-      allArticles = allArticles.filter((article) => article.sentiment === sentiment)
+    if (sentiment !== "all") {
+      filteredArticles = filteredArticles.filter((article) => article.sentiment === sentiment)
     }
 
     // Sort by published date (newest first)
-    allArticles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+    filteredArticles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
 
-    // Limit results
-    const limitedArticles = allArticles.slice(0, limit)
+    // Limit to 20 articles
+    filteredArticles = filteredArticles.slice(0, 20)
 
-    // Cache successful response
-    setCachedData(cacheKey, limitedArticles)
+    // Cache the results
+    setCachedNews(cacheKey, filteredArticles)
+
+    // Get metadata for filtering
+    const categories = [...new Set(uniqueArticles.map((article) => article.category))].sort()
+    const sentiments = [...new Set(uniqueArticles.map((article) => article.sentiment))].sort()
 
     return NextResponse.json({
       success: true,
-      articles: limitedArticles,
-      cached: false,
-      timestamp: Date.now(),
-      source: allArticles.length > 10 ? "Multiple APIs + Curated" : "Curated Indian Financial News",
-      totalResults: limitedArticles.length,
-      filters: {
-        category,
-        sentiment,
-        limit,
+      data: filteredArticles,
+      metadata: {
+        totalArticles: filteredArticles.length,
+        categories,
+        sentiments,
+        sources: [...new Set(filteredArticles.map((article) => article.source))],
+        lastUpdated: new Date().toISOString(),
       },
+      timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("Error in financial-news API:", error)
+    console.error("Error fetching financial news:", error)
 
-    // Always return some news, even on complete failure
-    const fallbackNews = generateCuratedNews().slice(0, 20)
+    // Return fallback news on error
+    const fallbackNews = generateFallbackNews()
 
     return NextResponse.json({
       success: true,
-      articles: fallbackNews,
+      data: fallbackNews,
       fallback: true,
-      error: error instanceof Error ? error.message : "API unavailable",
-      timestamp: Date.now(),
-      source: "Fallback Curated News",
-      totalResults: fallbackNews.length,
+      error: "News APIs temporarily unavailable",
+      count: fallbackNews.length,
+      timestamp: new Date().toISOString(),
     })
   }
 }
