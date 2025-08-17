@@ -9,29 +9,119 @@ interface ChartData {
   volume: number
 }
 
-// Real Yahoo Finance chart data fetching
+// Cache for chart data
+const chartCache = new Map<string, { data: ChartData[]; timestamp: number }>()
+const CHART_CACHE_DURATION = 60000 // 1 minute cache for chart data
+
+// Rate limiting for chart requests
+const chartRateLimitMap = new Map<string, { count: number; resetTime: number }>()
+const CHART_RATE_LIMIT_WINDOW = 60000 // 1 minute
+const MAX_CHART_REQUESTS_PER_WINDOW = 5
+
+function isChartRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const rateLimitData = chartRateLimitMap.get(ip)
+
+  if (!rateLimitData || now > rateLimitData.resetTime) {
+    chartRateLimitMap.set(ip, { count: 1, resetTime: now + CHART_RATE_LIMIT_WINDOW })
+    return false
+  }
+
+  if (rateLimitData.count >= MAX_CHART_REQUESTS_PER_WINDOW) {
+    return true
+  }
+
+  rateLimitData.count++
+  return false
+}
+
+// Enhanced Yahoo Finance chart data fetching
 async function fetchRealChartData(symbol: string, interval = "5m", range = "1d"): Promise<ChartData[]> {
   try {
+    const cacheKey = `chart-${symbol}-${interval}-${range}`
+    const cached = chartCache.get(cacheKey)
+
+    // Return cached data if available and fresh
+    if (cached && Date.now() - cached.timestamp < CHART_CACHE_DURATION) {
+      return cached.data
+    }
+
     const yahooSymbol = symbol.includes(".NS") ? symbol : `${symbol}.NS`
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-    })
+    // Multiple endpoints for better reliability
+    const endpoints = [
+      `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`,
+      `https://query2.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=${interval}&range=${range}`,
+    ]
 
-    if (!response.ok) {
-      throw new Error(`Yahoo Finance API error: ${response.status}`)
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Accept: "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            Referer: "https://finance.yahoo.com/",
+            Origin: "https://finance.yahoo.com",
+            "Cache-Control": "no-cache",
+          },
+          signal: AbortSignal.timeout(12000), // 12 second timeout for chart data
+        })
+
+        if (!response.ok) {
+          if (response.status === 429) {
+            throw new Error("Rate limited by Yahoo Finance")
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const contentType = response.headers.get("content-type")
+        if (!contentType || !contentType.includes("application/json")) {
+          const text = await response.text()
+          if (text.includes("Too Many Requests") || text.includes("Rate limit")) {
+            throw new Error("Rate limited by Yahoo Finance")
+          }
+          throw new Error("Invalid response format from Yahoo Finance")
+        }
+
+        const data = await response.json()
+
+        if (!data || !data.chart || !data.chart.result || data.chart.result.length === 0) {
+          throw new Error("No chart data returned from Yahoo Finance")
+        }
+
+        const chartData = parseChartData(data)
+
+        if (chartData.length > 0) {
+          // Cache successful response
+          chartCache.set(cacheKey, { data: chartData, timestamp: Date.now() })
+          return chartData
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch chart from ${url}:`, error)
+
+        // If rate limited, wait before trying next endpoint
+        if (error instanceof Error && error.message.includes("Rate limit")) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+
+        continue
+      }
     }
 
-    const data = await response.json()
+    return []
+  } catch (error) {
+    console.error(`Error fetching real chart data for ${symbol}:`, error)
+    return []
+  }
+}
+
+function parseChartData(data: any): ChartData[] {
+  try {
     const result = data.chart?.result?.[0]
-
-    if (!result) {
-      throw new Error("No chart data returned from Yahoo Finance")
-    }
+    if (!result) return []
 
     const timestamps = result.timestamp || []
     const indicators = result.indicators?.quote?.[0] || {}
@@ -44,7 +134,8 @@ async function fetchRealChartData(symbol: string, interval = "5m", range = "1d")
     const chartData: ChartData[] = []
 
     for (let i = 0; i < timestamps.length; i++) {
-      if (opens[i] && highs[i] && lows[i] && closes[i]) {
+      // Skip null/undefined values
+      if (opens[i] != null && highs[i] != null && lows[i] != null && closes[i] != null) {
         chartData.push({
           timestamp: timestamps[i] * 1000, // Convert to milliseconds
           open: Math.round(opens[i] * 100) / 100,
@@ -58,13 +149,13 @@ async function fetchRealChartData(symbol: string, interval = "5m", range = "1d")
 
     return chartData
   } catch (error) {
-    console.error(`Error fetching real chart data for ${symbol}:`, error)
+    console.error("Error parsing chart data:", error)
     return []
   }
 }
 
-// Generate realistic simulated chart data
-function generateSimulatedChartData(symbol: string, interval: string, range: string): ChartData[] {
+// Enhanced simulation with realistic patterns
+function generateEnhancedChartData(symbol: string, interval: string, range: string): ChartData[] {
   const data: ChartData[] = []
 
   // Base prices for different stocks
@@ -116,17 +207,30 @@ function generateSimulatedChartData(symbol: string, interval: string, range: str
       break
   }
 
+  // Generate realistic price movements
   for (let i = 0; i < dataPoints; i++) {
     const timestamp = now - (dataPoints - i) * timeStep
-    const volatility = basePrice * 0.002 // 0.2% volatility
+    const volatility = basePrice * (0.001 + Math.random() * 0.002) // 0.1% to 0.3% volatility
 
     const open = currentPrice
-    const randomChange = (Math.random() - 0.5) * volatility * 2
-    const close = Math.max(basePrice * 0.95, Math.min(basePrice * 1.05, open + randomChange))
+
+    // Add some trend and mean reversion
+    const trendFactor = Math.sin((i / dataPoints) * Math.PI * 2) * 0.3
+    const randomFactor = (Math.random() - 0.5) * 2
+    const meanReversionFactor = ((basePrice - currentPrice) / basePrice) * 0.1
+
+    const totalFactor = trendFactor + randomFactor + meanReversionFactor
+    const priceChange = volatility * totalFactor
+
+    const close = Math.max(basePrice * 0.9, Math.min(basePrice * 1.1, open + priceChange))
 
     const high = Math.max(open, close) + Math.random() * volatility * 0.5
     const low = Math.min(open, close) - Math.random() * volatility * 0.5
-    const volume = Math.floor(Math.random() * 2000000) + 500000
+
+    // Realistic volume patterns
+    const baseVolume = 1000000
+    const volumeVariation = Math.random() * 0.8 + 0.6 // 60% to 140% of base
+    const volume = Math.floor(baseVolume * volumeVariation)
 
     data.push({
       timestamp,
@@ -160,24 +264,52 @@ export async function GET(request: Request) {
       )
     }
 
-    // Try to fetch real data first
-    const realData = await fetchRealChartData(symbol, interval, range)
-
-    if (realData.length > 0) {
+    // Check rate limiting
+    const clientIP = request.headers.get("x-forwarded-for") || "unknown"
+    if (isChartRateLimited(clientIP)) {
+      // Return simulated data when rate limited
+      const simulatedData = generateEnhancedChartData(symbol, interval, range)
       return NextResponse.json({
         success: true,
-        data: realData,
+        data: simulatedData,
         symbol,
         interval,
         range,
         timestamp: Date.now(),
-        source: "Yahoo Finance API",
-        dataPoints: realData.length,
+        source: "Enhanced Simulation (Rate Limited)",
+        dataPoints: simulatedData.length,
+        rateLimited: true,
       })
     }
 
-    // Fallback to simulated data
-    const simulatedData = generateSimulatedChartData(symbol, interval, range)
+    // Try to fetch real data with timeout
+    const timeoutPromise = new Promise<ChartData[]>((_, reject) =>
+      setTimeout(() => reject(new Error("Chart request timeout")), 10000),
+    )
+
+    const dataPromise = fetchRealChartData(symbol, interval, range)
+
+    try {
+      const realData = await Promise.race([dataPromise, timeoutPromise])
+
+      if (realData.length > 0) {
+        return NextResponse.json({
+          success: true,
+          data: realData,
+          symbol,
+          interval,
+          range,
+          timestamp: Date.now(),
+          source: "Yahoo Finance API",
+          dataPoints: realData.length,
+        })
+      }
+    } catch (error) {
+      console.warn(`Yahoo Finance chart API failed for ${symbol}:`, error)
+    }
+
+    // Fallback to enhanced simulation
+    const simulatedData = generateEnhancedChartData(symbol, interval, range)
 
     return NextResponse.json({
       success: true,
@@ -186,18 +318,18 @@ export async function GET(request: Request) {
       interval,
       range,
       timestamp: Date.now(),
-      source: "Simulated Data (Yahoo API unavailable)",
+      source: "Enhanced Simulation (API Unavailable)",
       dataPoints: simulatedData.length,
     })
   } catch (error) {
-    console.error("Error fetching chart data:", error)
+    console.error("Error in yahoo-chart route:", error)
 
-    // Return simulated data on error
+    // Always return some data, even on complete failure
     const symbol = new URL(request.url).searchParams.get("symbol") || "RELIANCE.NS"
     const interval = new URL(request.url).searchParams.get("interval") || "5m"
     const range = new URL(request.url).searchParams.get("range") || "1d"
 
-    const simulatedData = generateSimulatedChartData(symbol, interval, range)
+    const simulatedData = generateEnhancedChartData(symbol, interval, range)
 
     return NextResponse.json({
       success: true,
@@ -206,8 +338,9 @@ export async function GET(request: Request) {
       interval,
       range,
       timestamp: Date.now(),
-      source: "Simulated Data (Error fallback)",
+      source: "Fallback Simulation (Error)",
       dataPoints: simulatedData.length,
+      error: error instanceof Error ? error.message : "Unknown error",
     })
   }
 }

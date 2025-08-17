@@ -22,7 +22,7 @@ interface UseLivePricesOptions {
   onPriceUpdate?: (symbol: string, price: LivePrice) => void
 }
 
-export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }: UseLivePricesOptions) {
+export function useLivePrices({ symbols, updateInterval = 3000, onPriceUpdate }: UseLivePricesOptions) {
   const [prices, setPrices] = useState<Map<string, LivePrice>>(new Map())
   const [isConnected, setIsConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected" | "error">(
@@ -34,19 +34,28 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const isComponentMountedRef = useRef(true)
   const lastUpdateTimeRef = useRef<number>(0)
+  const retryCountRef = useRef<number>(0)
+  const maxRetries = 3
 
-  // Fetch real price data from API
+  // Fetch price data with enhanced error handling
   const fetchPriceData = useCallback(async (symbol: string): Promise<LivePrice | null> => {
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+
       const response = await fetch(`/api/yahoo-quote?symbol=${encodeURIComponent(symbol)}`, {
         cache: "no-store",
         headers: {
           "Cache-Control": "no-cache",
+          Pragma: "no-cache",
         },
+        signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
+        throw new Error(`API error: ${response.status} ${response.statusText}`)
       }
 
       const data = await response.json()
@@ -69,7 +78,13 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
 
       return null
     } catch (error) {
-      console.error(`Error fetching price for ${symbol}:`, error)
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          console.warn(`Request timeout for ${symbol}`)
+        } else {
+          console.warn(`Error fetching price for ${symbol}:`, error.message)
+        }
+      }
       return null
     }
   }, [])
@@ -77,7 +92,7 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
   const updatePrices = useCallback(async () => {
     // Prevent too frequent updates
     const now = Date.now()
-    if (now - lastUpdateTimeRef.current < updateInterval - 100) {
+    if (now - lastUpdateTimeRef.current < updateInterval - 500) {
       return
     }
     lastUpdateTimeRef.current = now
@@ -87,9 +102,20 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
     try {
       setConnectionStatus("connecting")
 
-      // Fetch prices for all symbols
-      const pricePromises = symbols.map((symbol) => fetchPriceData(symbol))
-      const priceResults = await Promise.allSettled(pricePromises)
+      // Fetch prices for all symbols with staggered requests to avoid rate limiting
+      const priceResults: (LivePrice | null)[] = []
+
+      for (let i = 0; i < symbols.length; i++) {
+        const symbol = symbols[i]
+
+        // Add small delay between requests to avoid rate limiting
+        if (i > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+
+        const priceData = await fetchPriceData(symbol)
+        priceResults.push(priceData)
+      }
 
       const newPrices = new Map<string, LivePrice>()
       let successCount = 0
@@ -97,9 +123,9 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
       priceResults.forEach((result, index) => {
         const symbol = symbols[index]
 
-        if (result.status === "fulfilled" && result.value) {
-          newPrices.set(symbol, result.value)
-          onPriceUpdate?.(symbol, result.value)
+        if (result) {
+          newPrices.set(symbol, result)
+          onPriceUpdate?.(symbol, result)
           successCount++
         } else {
           // Keep existing price if fetch failed
@@ -116,14 +142,29 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
       if (isComponentMountedRef.current) {
         setPrices(newPrices)
         setLastUpdate(new Date())
-        setIsConnected(successCount > 0)
-        setConnectionStatus(successCount > 0 ? "connected" : "error")
+
+        if (successCount > 0) {
+          setIsConnected(true)
+          setConnectionStatus("connected")
+          retryCountRef.current = 0 // Reset retry count on success
+        } else {
+          retryCountRef.current++
+          if (retryCountRef.current >= maxRetries) {
+            setConnectionStatus("error")
+            setIsConnected(false)
+          } else {
+            setConnectionStatus("connecting")
+          }
+        }
       }
     } catch (error) {
       console.error("Error updating prices:", error)
       if (isComponentMountedRef.current) {
-        setConnectionStatus("error")
-        setIsConnected(false)
+        retryCountRef.current++
+        if (retryCountRef.current >= maxRetries) {
+          setConnectionStatus("error")
+          setIsConnected(false)
+        }
       }
     }
   }, [symbols, fetchPriceData, onPriceUpdate, updateInterval, prices])
@@ -132,6 +173,7 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
     if (!isComponentMountedRef.current) return
 
     setConnectionStatus("connecting")
+    retryCountRef.current = 0
 
     try {
       // Clear any existing interval
@@ -142,12 +184,15 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
       // Initial price fetch
       await updatePrices()
 
-      // Start regular updates
-      intervalRef.current = setInterval(() => {
-        if (isComponentMountedRef.current) {
-          updatePrices()
-        }
-      }, updateInterval)
+      // Start regular updates with increased interval to avoid rate limiting
+      intervalRef.current = setInterval(
+        () => {
+          if (isComponentMountedRef.current) {
+            updatePrices()
+          }
+        },
+        Math.max(updateInterval, 3000),
+      ) // Minimum 3 seconds between updates
 
       if (isComponentMountedRef.current) {
         setIsConnected(true)
@@ -170,6 +215,7 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
 
     setIsConnected(false)
     setConnectionStatus("disconnected")
+    retryCountRef.current = 0
   }, [])
 
   const reconnect = useCallback(() => {
@@ -178,7 +224,7 @@ export function useLivePrices({ symbols, updateInterval = 2000, onPriceUpdate }:
       if (isComponentMountedRef.current) {
         connect()
       }
-    }, 1000)
+    }, 2000) // Wait 2 seconds before reconnecting
   }, [connect, disconnect])
 
   useEffect(() => {

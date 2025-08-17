@@ -6,7 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TrendingUp, TrendingDown, Activity, RefreshCw, BarChart3, Target, Zap, Eye, Wifi, WifiOff } from "lucide-react"
+import {
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  RefreshCw,
+  BarChart3,
+  Target,
+  Zap,
+  Eye,
+  Wifi,
+  WifiOff,
+  AlertTriangle,
+} from "lucide-react"
 import { useLivePrices } from "@/hooks/use-live-prices"
 
 interface StockData {
@@ -20,6 +32,7 @@ interface StockData {
   open: number
   previousClose: number
   companyName: string
+  source?: string
 }
 
 interface TechnicalIndicator {
@@ -68,12 +81,13 @@ export function TradingViewChart() {
   const [technicalIndicators, setTechnicalIndicators] = useState<TechnicalIndicator[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [chartSource, setChartSource] = useState<string>("")
   const chartRef = useRef<HTMLCanvasElement>(null)
 
-  // Use live prices hook
+  // Use live prices hook with increased interval to avoid rate limiting
   const { prices, getPrice, isConnected, connectionStatus, lastUpdate, reconnect } = useLivePrices({
     symbols: [selectedStock],
-    updateInterval: 2000,
+    updateInterval: 4000, // Increased to 4 seconds to avoid rate limiting
     onPriceUpdate: (symbol, price) => {
       if (symbol === selectedStock) {
         updateStockData(price)
@@ -95,36 +109,50 @@ export function TradingViewChart() {
       open: livePrice.open || livePrice.price * 0.999,
       previousClose: livePrice.price - livePrice.change,
       companyName: livePrice.companyName || company?.name || "Company",
+      source: livePrice.source,
     })
   }
 
-  // Fetch chart data from API
+  // Fetch chart data from API with enhanced error handling
   const fetchChartData = async (symbol: string, timeframe: string): Promise<ChartData[]> => {
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout for chart
+
       const response = await fetch(
         `/api/yahoo-chart?symbol=${encodeURIComponent(symbol)}&range=${timeframe}&interval=5m`,
         {
           cache: "no-store",
           headers: {
             "Cache-Control": "no-cache",
+            Pragma: "no-cache",
           },
+          signal: controller.signal,
         },
       )
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error(`Chart API error: ${response.status}`)
+        throw new Error(`Chart API error: ${response.status} ${response.statusText}`)
       }
 
       const data = await response.json()
 
-      if (data.success && data.data) {
+      if (data.success && data.data && Array.isArray(data.data)) {
+        setChartSource(data.source || "Unknown")
         return data.data
       }
 
-      return []
+      throw new Error("Invalid chart data format")
     } catch (error) {
-      console.error(`Error fetching chart data for ${symbol}:`, error)
-      return []
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          throw new Error("Chart request timeout")
+        }
+        throw error
+      }
+      throw new Error("Unknown chart error")
     }
   }
 
@@ -211,6 +239,8 @@ export function TradingViewChart() {
     const maxPrice = Math.max(...prices)
     const priceRange = maxPrice - minPrice
 
+    if (priceRange === 0) return // Avoid division by zero
+
     // Draw grid
     ctx.strokeStyle = "#1e293b"
     ctx.lineWidth = 1
@@ -262,7 +292,7 @@ export function TradingViewChart() {
       const sma20 = technicalIndicators.find((i) => i.name === "SMA 20")?.value
       const sma50 = technicalIndicators.find((i) => i.name === "SMA 50")?.value
 
-      if (sma20) {
+      if (sma20 && sma20 >= minPrice && sma20 <= maxPrice) {
         const sma20Y = height - padding - ((sma20 - minPrice) / priceRange) * (height - 2 * padding)
         ctx.strokeStyle = "#3b82f6"
         ctx.lineWidth = 2
@@ -274,7 +304,7 @@ export function TradingViewChart() {
         ctx.setLineDash([])
       }
 
-      if (sma50) {
+      if (sma50 && sma50 >= minPrice && sma50 <= maxPrice) {
         const sma50Y = height - padding - ((sma50 - minPrice) / priceRange) * (height - 2 * padding)
         ctx.strokeStyle = "#f59e0b"
         ctx.lineWidth = 2
@@ -300,14 +330,16 @@ export function TradingViewChart() {
     const volumeHeight = 60
     const maxVolume = Math.max(...chartData.map((d) => d.volume))
 
-    chartData.forEach((candle, index) => {
-      const x = padding + (index * (width - 2 * padding)) / (chartData.length - 1)
-      const volumeBarHeight = (candle.volume / maxVolume) * volumeHeight
-      const isGreen = candle.close > candle.open
+    if (maxVolume > 0) {
+      chartData.forEach((candle, index) => {
+        const x = padding + (index * (width - 2 * padding)) / (chartData.length - 1)
+        const volumeBarHeight = (candle.volume / maxVolume) * volumeHeight
+        const isGreen = candle.close > candle.open
 
-      ctx.fillStyle = isGreen ? "#10b98150" : "#ef444450"
-      ctx.fillRect(x - candleWidth / 2, height - volumeHeight, candleWidth, volumeBarHeight)
-    })
+        ctx.fillStyle = isGreen ? "#10b98150" : "#ef444450"
+        ctx.fillRect(x - candleWidth / 2, height - volumeHeight, candleWidth, volumeBarHeight)
+      })
+    }
   }
 
   useEffect(() => {
@@ -328,7 +360,7 @@ export function TradingViewChart() {
         })
         .catch((err) => {
           console.error("Error loading chart data:", err)
-          setError("Failed to load chart data")
+          setError(err.message || "Failed to load chart data")
         })
         .finally(() => {
           setLoading(false)
@@ -379,6 +411,16 @@ export function TradingViewChart() {
     }
   }
 
+  const getSourceBadgeColor = (source: string) => {
+    if (source?.includes("Yahoo Finance API")) {
+      return "bg-green-500/20 text-green-400 border-green-500/30"
+    } else if (source?.includes("Simulation")) {
+      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+    } else {
+      return "bg-blue-500/20 text-blue-400 border-blue-500/30"
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Controls */}
@@ -417,10 +459,12 @@ export function TradingViewChart() {
             {connectionStatus.toUpperCase()}
           </Badge>
 
-          <Badge variant="secondary" className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-            <Activity className="h-3 w-3 mr-1 animate-pulse" />
-            LIVE API
-          </Badge>
+          {stockData?.source && (
+            <Badge className={getSourceBadgeColor(stockData.source)}>
+              <Activity className="h-3 w-3 mr-1 animate-pulse" />
+              {stockData.source.includes("API") ? "LIVE API" : "SIMULATION"}
+            </Badge>
+          )}
 
           {lastUpdate && <span className="text-xs text-white/50">Updated: {lastUpdate.toLocaleTimeString()}</span>}
 
@@ -445,6 +489,11 @@ export function TradingViewChart() {
                 <h3 className="text-lg font-bold text-white flex items-center">
                   {stockData.companyName}
                   <Badge className="ml-2 bg-red-500/20 text-red-400 border-red-500/30 animate-pulse">LIVE</Badge>
+                  {stockData.source && (
+                    <Badge className={`ml-2 ${getSourceBadgeColor(stockData.source)}`}>
+                      {stockData.source.includes("API") ? "API" : "SIM"}
+                    </Badge>
+                  )}
                 </h3>
                 <p className="text-sm text-white/70">{stockData.symbol}</p>
               </div>
@@ -497,8 +546,35 @@ export function TradingViewChart() {
         <Card className="bg-red-900/20 border-red-500/20">
           <CardContent className="p-4">
             <div className="flex items-center space-x-2 text-red-400">
-              <RefreshCw className="h-4 w-4" />
+              <AlertTriangle className="h-4 w-4" />
               <span>{error}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setError(null)
+                  if (selectedStock) {
+                    setLoading(true)
+                    fetchChartData(selectedStock, selectedTimeframe)
+                      .then((data) => {
+                        if (data.length > 0) {
+                          setChartData(data)
+                          const indicators = calculateTechnicalIndicators(data)
+                          setTechnicalIndicators(indicators)
+                        }
+                      })
+                      .catch((err) => {
+                        setError(err.message || "Failed to load chart data")
+                      })
+                      .finally(() => {
+                        setLoading(false)
+                      })
+                  }
+                }}
+                className="text-red-400 hover:text-red-300"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -517,6 +593,11 @@ export function TradingViewChart() {
                 <Eye className="h-3 w-3 mr-1" />
                 Real-time Analysis
               </Badge>
+              {chartSource && (
+                <Badge className={getSourceBadgeColor(chartSource)}>
+                  {chartSource.includes("API") ? "API DATA" : "SIMULATED"}
+                </Badge>
+              )}
             </div>
           </CardTitle>
         </CardHeader>
@@ -639,15 +720,17 @@ export function TradingViewChart() {
                       <Badge className="bg-red-500/20 text-red-400 border-red-500/30 animate-pulse">UPDATING</Badge>
                     </div>
                     <div className="space-y-2 text-sm text-white/80">
-                      <p>🔴 Live price updates every 2 seconds from Yahoo Finance API</p>
+                      <p>🔴 Enhanced rate limiting protection to avoid API blocks</p>
                       <p>📊 Real-time technical indicators with automatic recalculation</p>
                       <p>📈 Dynamic support/resistance levels based on live price action</p>
-                      <p>⚡ Instant signal generation for entry/exit points</p>
+                      <p>⚡ Intelligent fallback to simulation when APIs are unavailable</p>
                       <p>🎯 Live volume analysis with institutional flow detection</p>
+                      <p>🛡️ Built-in error handling and retry mechanisms</p>
                       <p className="text-green-400">
                         💡 Current recommendation:{" "}
                         {stockData && stockData.changePercent > 0 ? "HOLD/BUY on dips" : "WAIT for reversal"}
                       </p>
+                      {stockData?.source && <p className="text-blue-400">📡 Data Source: {stockData.source}</p>}
                     </div>
                   </CardContent>
                 </Card>
