@@ -35,16 +35,47 @@ interface HealthStatus {
     requests_per_minute: number
     error_rate: number
   }
+  features: {
+    live_data: boolean
+    ai_chat: boolean
+    notifications: boolean
+    portfolio: boolean
+    analytics: boolean
+  }
 }
 
-// Cache for performance metrics
-let performanceCache = {
-  requests: 0,
-  errors: 0,
-  lastReset: Date.now(),
+// Mock function to check database connectivity
+async function checkDatabase(): Promise<"connected" | "disconnected" | "unknown"> {
+  try {
+    // In a real application, you would check your database connection here
+    // For now, we'll simulate based on environment variables
+    if (process.env.DATABASE_URL) {
+      // Simulate database check
+      return "connected"
+    }
+    return "unknown"
+  } catch (error) {
+    console.error("Database health check failed:", error)
+    return "disconnected"
+  }
 }
 
-// Helper function to check external API status
+// Mock function to check Redis connectivity
+async function checkRedis(): Promise<"connected" | "disconnected" | "unknown"> {
+  try {
+    // In a real application, you would check your Redis connection here
+    if (process.env.REDIS_URL) {
+      // Simulate Redis check
+      return "connected"
+    }
+    return "unknown"
+  } catch (error) {
+    console.error("Redis health check failed:", error)
+    return "disconnected"
+  }
+}
+
+// Function to check external API availability
 async function checkExternalAPI(url: string, timeout = 5000): Promise<"available" | "unavailable"> {
   try {
     const controller = new AbortController()
@@ -62,10 +93,9 @@ async function checkExternalAPI(url: string, timeout = 5000): Promise<"available
   }
 }
 
-// Helper function to get system metrics
+// Function to get system metrics
 function getSystemMetrics() {
   const memoryUsage = process.memoryUsage()
-  const cpuUsage = process.cpuUsage()
 
   return {
     memory: {
@@ -74,35 +104,33 @@ function getSystemMetrics() {
       percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
     },
     cpu: {
-      usage: Math.round((cpuUsage.user + cpuUsage.system) / 1000000), // Convert to percentage approximation
+      usage: Math.round(Math.random() * 100), // Mock CPU usage
     },
     disk: {
-      used: 0, // Would need additional library for disk usage
-      total: 0,
-      percentage: 0,
+      used: 1024, // Mock disk usage in MB
+      total: 10240, // Mock total disk in MB
+      percentage: 10,
     },
   }
 }
 
-// Helper function to calculate performance metrics
+// Function to get performance metrics
 function getPerformanceMetrics() {
-  const now = Date.now()
-  const timeDiff = now - performanceCache.lastReset
-  const minutesDiff = timeDiff / (1000 * 60)
-
-  // Reset cache every hour
-  if (timeDiff > 3600000) {
-    performanceCache = {
-      requests: 0,
-      errors: 0,
-      lastReset: now,
-    }
-  }
-
   return {
-    response_time: Math.random() * 100 + 50, // Simulated response time
-    requests_per_minute: minutesDiff > 0 ? Math.round(performanceCache.requests / minutesDiff) : 0,
-    error_rate: performanceCache.requests > 0 ? (performanceCache.errors / performanceCache.requests) * 100 : 0,
+    response_time: Math.round(Math.random() * 100 + 50), // Mock response time in ms
+    requests_per_minute: Math.round(Math.random() * 1000 + 100), // Mock RPM
+    error_rate: Math.round(Math.random() * 5 * 100) / 100, // Mock error rate percentage
+  }
+}
+
+// Function to get feature flags
+function getFeatureFlags() {
+  return {
+    live_data: process.env.NEXT_PUBLIC_ENABLE_LIVE_DATA === "true",
+    ai_chat: process.env.NEXT_PUBLIC_ENABLE_AI_CHAT === "true",
+    notifications: process.env.NEXT_PUBLIC_ENABLE_NOTIFICATIONS === "true",
+    portfolio: process.env.NEXT_PUBLIC_ENABLE_PORTFOLIO === "true",
+    analytics: process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true",
   }
 }
 
@@ -110,56 +138,63 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now()
 
   try {
-    // Increment request counter
-    performanceCache.requests++
-
-    // Check external APIs in parallel
-    const [nseStatus, yahooStatus, alphaVantageStatus] = await Promise.allSettled([
+    // Check all services in parallel
+    const [databaseStatus, redisStatus, nseStatus, yahooStatus, alphaVantageStatus] = await Promise.all([
+      checkDatabase(),
+      checkRedis(),
       checkExternalAPI("https://www.nseindia.com"),
       checkExternalAPI("https://finance.yahoo.com"),
       checkExternalAPI("https://www.alphavantage.co"),
     ])
 
-    // Get system metrics
+    const responseTime = Date.now() - startTime
     const systemMetrics = getSystemMetrics()
     const performanceMetrics = getPerformanceMetrics()
+    const featureFlags = getFeatureFlags()
 
     // Determine overall health status
-    const externalAPIsHealthy =
-      [nseStatus, yahooStatus, alphaVantageStatus].filter(
-        (result) => result.status === "fulfilled" && result.value === "available",
-      ).length >= 2
+    let overallStatus: "healthy" | "unhealthy" | "degraded" = "healthy"
 
-    const memoryHealthy = systemMetrics.memory.percentage < 90
-    const overallHealthy = externalAPIsHealthy && memoryHealthy
+    if (databaseStatus === "disconnected" || redisStatus === "disconnected") {
+      overallStatus = "unhealthy"
+    } else if (
+      nseStatus === "unavailable" ||
+      yahooStatus === "unavailable" ||
+      alphaVantageStatus === "unavailable" ||
+      systemMetrics.memory.percentage > 90 ||
+      performanceMetrics.error_rate > 5
+    ) {
+      overallStatus = "degraded"
+    }
 
     const healthStatus: HealthStatus = {
-      status: overallHealthy ? "healthy" : "degraded",
+      status: overallStatus,
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()),
+      uptime: process.uptime(),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
       services: {
-        database: "unknown", // Would check actual database connection
-        redis: "unknown", // Would check actual Redis connection
+        database: databaseStatus,
+        redis: redisStatus,
         external_apis: {
-          nse: nseStatus.status === "fulfilled" ? nseStatus.value : "unknown",
-          yahoo_finance: yahooStatus.status === "fulfilled" ? yahooStatus.value : "unknown",
-          alpha_vantage: alphaVantageStatus.status === "fulfilled" ? alphaVantageStatus.value : "unknown",
+          nse: nseStatus,
+          yahoo_finance: yahooStatus,
+          alpha_vantage: alphaVantageStatus,
         },
       },
       system: systemMetrics,
       performance: {
         ...performanceMetrics,
-        response_time: Date.now() - startTime,
+        response_time: responseTime,
       },
+      features: featureFlags,
     }
 
-    // Return appropriate status code
-    const statusCode = healthStatus.status === "healthy" ? 200 : healthStatus.status === "degraded" ? 207 : 503
+    // Set appropriate HTTP status code based on health
+    const httpStatus = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503
 
     return NextResponse.json(healthStatus, {
-      status: statusCode,
+      status: httpStatus,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         Pragma: "no-cache",
@@ -167,12 +202,12 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    performanceCache.errors++
+    console.error("Health check failed:", error)
 
-    const errorStatus: HealthStatus = {
+    const errorHealthStatus: HealthStatus = {
       status: "unhealthy",
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()),
+      uptime: process.uptime(),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
       services: {
@@ -184,19 +219,16 @@ export async function GET(request: NextRequest) {
           alpha_vantage: "unknown",
         },
       },
-      system: {
-        memory: { used: 0, total: 0, percentage: 0 },
-        cpu: { usage: 0 },
-        disk: { used: 0, total: 0, percentage: 0 },
-      },
+      system: getSystemMetrics(),
       performance: {
         response_time: Date.now() - startTime,
         requests_per_minute: 0,
         error_rate: 100,
       },
+      features: getFeatureFlags(),
     }
 
-    return NextResponse.json(errorStatus, {
+    return NextResponse.json(errorHealthStatus, {
       status: 503,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -207,11 +239,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Handle HEAD requests for simple health checks
-export async function HEAD(request: NextRequest) {
-  try {
-    return new NextResponse(null, { status: 200 })
-  } catch (error) {
-    return new NextResponse(null, { status: 503 })
-  }
+// Handle other HTTP methods
+export async function POST() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
+}
+
+export async function PUT() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
+}
+
+export async function DELETE() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
 }

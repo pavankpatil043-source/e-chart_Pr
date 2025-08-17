@@ -2,9 +2,17 @@
 
 # EChart Trading Platform Deployment Script
 # Usage: ./deploy.sh [environment]
-# Environments: development, staging, production
+# Environment: development, staging, production (default: production)
 
 set -e  # Exit on any error
+
+# Configuration
+ENVIRONMENT=${1:-production}
+PROJECT_NAME="echart-trading-platform"
+DOCKER_IMAGE="echart-trading"
+HEALTH_CHECK_URL="http://localhost:3000/api/health"
+MAX_RETRIES=30
+RETRY_INTERVAL=10
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,12 +21,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-PROJECT_NAME="echart-trading-platform"
-DOMAIN="echart.in"
-ENVIRONMENT=${1:-production}
-
-# Functions
+# Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -35,202 +38,183 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check prerequisites
-check_prerequisites() {
-    log_info "Checking prerequisites..."
+# Check if required tools are installed
+check_dependencies() {
+    log_info "Checking dependencies..."
     
-    # Check if Node.js is installed
     if ! command -v node &> /dev/null; then
-        log_error "Node.js is not installed. Please install Node.js 18 or higher."
+        log_error "Node.js is not installed"
         exit 1
     fi
     
-    # Check Node.js version
-    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        log_error "Node.js version 18 or higher is required. Current version: $(node -v)"
-        exit 1
-    fi
-    
-    # Check if npm is installed
     if ! command -v npm &> /dev/null; then
-        log_error "npm is not installed."
+        log_error "npm is not installed"
         exit 1
     fi
     
-    log_success "Prerequisites check passed"
+    log_success "All dependencies are installed"
+}
+
+# Clean previous builds
+clean_build() {
+    log_info "Cleaning previous builds..."
+    rm -rf .next
+    rm -rf out
+    rm -rf dist
+    rm -rf node_modules/.cache
+    log_success "Build cleaned"
 }
 
 # Install dependencies
 install_dependencies() {
     log_info "Installing dependencies..."
-    
-    # Clean install
-    rm -rf node_modules package-lock.json
-    npm install
-    
-    log_success "Dependencies installed successfully"
+    npm ci --production=false
+    log_success "Dependencies installed"
 }
 
 # Run tests
 run_tests() {
     log_info "Running tests..."
-    
-    # Type checking
     npm run type-check
-    
-    # Linting
     npm run lint
-    
-    log_success "All tests passed"
+    log_success "Tests passed"
 }
 
-# Build application
+# Build the application
 build_application() {
     log_info "Building application for $ENVIRONMENT..."
     
-    # Set environment variables
-    export NODE_ENV=$ENVIRONMENT
-    export NEXT_TELEMETRY_DISABLED=1
+    if [ "$ENVIRONMENT" = "production" ]; then
+        export NODE_ENV=production
+    else
+        export NODE_ENV=development
+    fi
     
-    # Clean previous build
-    npm run clean
-    
-    # Build
     npm run build
-    
     log_success "Application built successfully"
+}
+
+# Health check function
+health_check() {
+    local url=$1
+    local retries=0
+    
+    log_info "Performing health check..."
+    
+    while [ $retries -lt $MAX_RETRIES ]; do
+        if curl -f -s "$url" > /dev/null; then
+            log_success "Health check passed"
+            return 0
+        fi
+        
+        retries=$((retries + 1))
+        log_warning "Health check failed, retrying in $RETRY_INTERVAL seconds... ($retries/$MAX_RETRIES)"
+        sleep $RETRY_INTERVAL
+    done
+    
+    log_error "Health check failed after $MAX_RETRIES attempts"
+    return 1
 }
 
 # Deploy to Vercel
 deploy_vercel() {
     log_info "Deploying to Vercel..."
     
-    # Check if Vercel CLI is installed
     if ! command -v vercel &> /dev/null; then
-        log_warning "Vercel CLI not found. Installing..."
-        npm install -g vercel
+        log_error "Vercel CLI is not installed. Install with: npm i -g vercel"
+        exit 1
     fi
     
-    # Deploy based on environment
     if [ "$ENVIRONMENT" = "production" ]; then
         vercel --prod --yes
     else
         vercel --yes
     fi
     
-    log_success "Deployed to Vercel successfully"
+    log_success "Deployed to Vercel"
 }
 
 # Deploy with Docker
 deploy_docker() {
     log_info "Deploying with Docker..."
     
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker is not installed"
+        exit 1
+    fi
+    
     # Build Docker image
-    docker build -t $PROJECT_NAME:$ENVIRONMENT .
+    log_info "Building Docker image..."
+    docker build -t $DOCKER_IMAGE .
     
     # Stop existing container
-    docker stop $PROJECT_NAME-$ENVIRONMENT 2>/dev/null || true
-    docker rm $PROJECT_NAME-$ENVIRONMENT 2>/dev/null || true
+    if docker ps -q -f name=$PROJECT_NAME; then
+        log_info "Stopping existing container..."
+        docker stop $PROJECT_NAME
+        docker rm $PROJECT_NAME
+    fi
     
     # Run new container
+    log_info "Starting new container..."
     docker run -d \
-        --name $PROJECT_NAME-$ENVIRONMENT \
-        --restart unless-stopped \
+        --name $PROJECT_NAME \
         -p 3000:3000 \
-        -e NODE_ENV=$ENVIRONMENT \
-        $PROJECT_NAME:$ENVIRONMENT
+        --restart unless-stopped \
+        $DOCKER_IMAGE
     
-    log_success "Deployed with Docker successfully"
-}
-
-# Deploy to VPS with PM2
-deploy_pm2() {
-    log_info "Deploying with PM2..."
+    # Wait for container to start
+    sleep 5
     
-    # Check if PM2 is installed
-    if ! command -v pm2 &> /dev/null; then
-        log_warning "PM2 not found. Installing..."
-        npm install -g pm2
-    fi
-    
-    # Create PM2 ecosystem file
-    cat > ecosystem.config.js << EOF
-module.exports = {
-  apps: [{
-    name: '$PROJECT_NAME-$ENVIRONMENT',
-    script: 'npm',
-    args: 'start',
-    cwd: '$(pwd)',
-    instances: 'max',
-    exec_mode: 'cluster',
-    env: {
-      NODE_ENV: '$ENVIRONMENT',
-      PORT: 3000
-    },
-    error_file: './logs/err.log',
-    out_file: './logs/out.log',
-    log_file: './logs/combined.log',
-    time: true
-  }]
-}
-EOF
-    
-    # Create logs directory
-    mkdir -p logs
-    
-    # Start with PM2
-    pm2 start ecosystem.config.js
-    pm2 save
-    pm2 startup
-    
-    log_success "Deployed with PM2 successfully"
-}
-
-# Health check
-health_check() {
-    log_info "Performing health check..."
-    
-    local url="https://$DOMAIN"
-    if [ "$ENVIRONMENT" != "production" ]; then
-        url="http://localhost:3000"
-    fi
-    
-    # Wait for application to start
-    sleep 10
-    
-    # Check health endpoint
-    if curl -f "$url/api/health" > /dev/null 2>&1; then
-        log_success "Health check passed"
+    # Health check
+    if health_check $HEALTH_CHECK_URL; then
+        log_success "Docker deployment successful"
     else
-        log_error "Health check failed"
+        log_error "Docker deployment failed health check"
         exit 1
     fi
 }
 
-# Cleanup
-cleanup() {
-    log_info "Cleaning up..."
+# Deploy with PM2
+deploy_pm2() {
+    log_info "Deploying with PM2..."
     
-    # Remove temporary files
-    rm -f ecosystem.config.js
+    if ! command -v pm2 &> /dev/null; then
+        log_error "PM2 is not installed. Install with: npm i -g pm2"
+        exit 1
+    fi
     
-    log_success "Cleanup completed"
+    # Stop existing process
+    pm2 stop $PROJECT_NAME 2>/dev/null || true
+    pm2 delete $PROJECT_NAME 2>/dev/null || true
+    
+    # Start new process
+    pm2 start npm --name $PROJECT_NAME -- start
+    pm2 save
+    
+    # Health check
+    sleep 5
+    if health_check $HEALTH_CHECK_URL; then
+        log_success "PM2 deployment successful"
+    else
+        log_error "PM2 deployment failed health check"
+        exit 1
+    fi
 }
 
 # Main deployment function
 main() {
-    log_info "Starting deployment for environment: $ENVIRONMENT"
+    log_info "Starting deployment for $ENVIRONMENT environment"
     
-    # Run deployment steps
-    check_prerequisites
+    # Pre-deployment checks
+    check_dependencies
+    clean_build
     install_dependencies
     run_tests
     build_application
     
     # Choose deployment method
-    case "$ENVIRONMENT" in
-        "production"|"staging")
+    case "${2:-vercel}" in
+        "vercel")
             deploy_vercel
             ;;
         "docker")
@@ -240,21 +224,49 @@ main() {
             deploy_pm2
             ;;
         *)
-            log_error "Unknown environment: $ENVIRONMENT"
-            log_info "Available environments: production, staging, docker, pm2"
+            log_error "Unknown deployment method: $2"
+            log_info "Available methods: vercel, docker, pm2"
             exit 1
             ;;
     esac
     
-    health_check
-    cleanup
-    
     log_success "Deployment completed successfully!"
-    log_info "Application is now live at: https://$DOMAIN"
+    log_info "Application should be available at:"
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        log_info "🌐 Production: https://echart.in"
+    else
+        log_info "🔧 Development: http://localhost:3000"
+    fi
+    
+    log_info "📊 Health Check: https://echart.in/api/health"
+    log_info "🗺️  Sitemap: https://echart.in/sitemap.xml"
+    log_info "🤖 Robots: https://echart.in/robots.txt"
 }
 
-# Handle script interruption
-trap cleanup EXIT
+# Show usage if help is requested
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "EChart Trading Platform Deployment Script"
+    echo ""
+    echo "Usage: $0 [environment] [method]"
+    echo ""
+    echo "Environments:"
+    echo "  development  - Deploy to development environment"
+    echo "  staging      - Deploy to staging environment"
+    echo "  production   - Deploy to production environment (default)"
+    echo ""
+    echo "Methods:"
+    echo "  vercel       - Deploy to Vercel (default)"
+    echo "  docker       - Deploy using Docker"
+    echo "  pm2          - Deploy using PM2"
+    echo ""
+    echo "Examples:"
+    echo "  $0                           # Deploy to production using Vercel"
+    echo "  $0 production vercel         # Deploy to production using Vercel"
+    echo "  $0 staging docker            # Deploy to staging using Docker"
+    echo "  $0 development pm2           # Deploy to development using PM2"
+    exit 0
+fi
 
 # Run main function
 main "$@"

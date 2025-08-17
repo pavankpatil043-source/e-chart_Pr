@@ -10,8 +10,8 @@ interface SitemapUrl {
 // Static pages configuration
 const staticPages: Omit<SitemapUrl, "lastmod">[] = [
   {
-    loc: "/",
-    changefreq: "hourly",
+    loc: "",
+    changefreq: "daily",
     priority: 1.0,
   },
   {
@@ -27,21 +27,65 @@ const staticPages: Omit<SitemapUrl, "lastmod">[] = [
   {
     loc: "/privacy",
     changefreq: "yearly",
-    priority: 0.3,
+    priority: 0.5,
   },
   {
     loc: "/terms",
     changefreq: "yearly",
-    priority: 0.3,
+    priority: 0.5,
   },
   {
     loc: "/help",
-    changefreq: "weekly",
+    changefreq: "monthly",
     priority: 0.6,
   },
 ]
 
-// Popular Indian stocks for dynamic content
+// Trading related pages
+const tradingPages: Omit<SitemapUrl, "lastmod">[] = [
+  {
+    loc: "/markets",
+    changefreq: "hourly",
+    priority: 0.9,
+  },
+  {
+    loc: "/markets/nse",
+    changefreq: "hourly",
+    priority: 0.9,
+  },
+  {
+    loc: "/markets/bse",
+    changefreq: "hourly",
+    priority: 0.8,
+  },
+  {
+    loc: "/analysis",
+    changefreq: "daily",
+    priority: 0.8,
+  },
+  {
+    loc: "/portfolio",
+    changefreq: "daily",
+    priority: 0.7,
+  },
+  {
+    loc: "/watchlist",
+    changefreq: "daily",
+    priority: 0.7,
+  },
+  {
+    loc: "/news",
+    changefreq: "hourly",
+    priority: 0.8,
+  },
+  {
+    loc: "/screener",
+    changefreq: "daily",
+    priority: 0.8,
+  },
+]
+
+// Popular Indian stocks
 const popularStocks = [
   "RELIANCE",
   "TCS",
@@ -59,10 +103,15 @@ const popularStocks = [
   "AXISBANK",
   "LT",
   "TITAN",
+  "NESTLEIND",
   "ULTRACEMCO",
   "WIPRO",
-  "NESTLEIND",
+  "ONGC",
   "POWERGRID",
+  "NTPC",
+  "TECHM",
+  "SUNPHARMA",
+  "COALINDIA",
 ]
 
 // Market sectors
@@ -98,13 +147,8 @@ function generateSitemapXML(urls: SitemapUrl[]): string {
     .join("")
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml"
-        xmlns:mobile="http://www.google.com/schemas/sitemap-mobile/1.0"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
-${urlElements}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  ${urlElements}
 </urlset>`
 }
 
@@ -121,13 +165,37 @@ export async function GET(request: NextRequest) {
       })
     })
 
+    // Add trading pages
+    tradingPages.forEach((page) => {
+      urls.push({
+        ...page,
+        lastmod: currentDate,
+      })
+    })
+
     // Add stock pages
     popularStocks.forEach((stock) => {
       urls.push({
         loc: `/stocks/${stock.toLowerCase()}`,
         lastmod: currentDate,
         changefreq: "hourly",
-        priority: 0.9,
+        priority: 0.8,
+      })
+
+      // Add stock analysis pages
+      urls.push({
+        loc: `/stocks/${stock.toLowerCase()}/analysis`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.7,
+      })
+
+      // Add stock news pages
+      urls.push({
+        loc: `/stocks/${stock.toLowerCase()}/news`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.6,
       })
     })
 
@@ -137,7 +205,15 @@ export async function GET(request: NextRequest) {
         loc: `/sectors/${sector}`,
         lastmod: currentDate,
         changefreq: "daily",
-        priority: 0.8,
+        priority: 0.7,
+      })
+
+      // Add sector analysis pages
+      urls.push({
+        loc: `/sectors/${sector}/analysis`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
       })
     })
 
@@ -147,50 +223,58 @@ export async function GET(request: NextRequest) {
         loc: `/indices/${index}`,
         lastmod: currentDate,
         changefreq: "hourly",
-        priority: 0.9,
+        priority: 0.8,
       })
-    })
 
-    // Add trading tools pages
-    const tradingTools = [
-      "portfolio",
-      "watchlist",
-      "screener",
-      "calculator",
-      "technical-analysis",
-      "fundamental-analysis",
-      "news",
-      "alerts",
-    ]
-
-    tradingTools.forEach((tool) => {
+      // Add index analysis pages
       urls.push({
-        loc: `/tools/${tool}`,
+        loc: `/indices/${index}/analysis`,
         lastmod: currentDate,
-        changefreq: "weekly",
+        changefreq: "daily",
         priority: 0.7,
       })
     })
 
     // Add educational content pages
-    const educationalPages = [
-      "learn/basics",
-      "learn/technical-analysis",
-      "learn/fundamental-analysis",
-      "learn/options",
-      "learn/derivatives",
-      "learn/mutual-funds",
-      "learn/ipo",
-      "learn/bonds",
-      "learn/commodities",
+    const educationalTopics = [
+      "technical-analysis",
+      "fundamental-analysis",
+      "options-trading",
+      "derivatives",
+      "mutual-funds",
+      "ipo",
+      "dividend-investing",
+      "risk-management",
+      "portfolio-management",
+      "market-psychology",
     ]
 
-    educationalPages.forEach((page) => {
+    educationalTopics.forEach((topic) => {
       urls.push({
-        loc: `/${page}`,
+        loc: `/learn/${topic}`,
         lastmod: currentDate,
         changefreq: "monthly",
         priority: 0.6,
+      })
+    })
+
+    // Add tools pages
+    const tools = [
+      "calculator",
+      "screener",
+      "compare",
+      "alerts",
+      "portfolio-tracker",
+      "sip-calculator",
+      "tax-calculator",
+    ]
+
+    tools.forEach((tool) => {
+      urls.push({
+        loc: `/tools/${tool}`,
+        lastmod: currentDate,
+        changefreq: "weekly",
+        priority: 0.7,
       })
     })
 
@@ -202,40 +286,24 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": "application/xml",
         "Cache-Control": "public, max-age=3600, s-maxage=3600", // Cache for 1 hour
-        "X-Robots-Tag": "noindex", // Don't index the sitemap itself
       },
     })
   } catch (error) {
     console.error("Error generating sitemap:", error)
 
-    // Return minimal sitemap on error
-    const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"}</loc>
-    <lastmod>${new Date().toISOString()}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>`
-
-    return new NextResponse(fallbackSitemap, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/xml",
-        "Cache-Control": "public, max-age=300, s-maxage=300", // Shorter cache on error
-      },
-    })
+    return NextResponse.json({ error: "Failed to generate sitemap" }, { status: 500 })
   }
 }
 
-// Handle HEAD requests
-export async function HEAD() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/xml",
-      "Cache-Control": "public, max-age=3600",
-    },
-  })
+// Handle other HTTP methods
+export async function POST() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
+}
+
+export async function PUT() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
+}
+
+export async function DELETE() {
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
 }
