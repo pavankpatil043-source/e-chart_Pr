@@ -1,255 +1,181 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 
-interface StockQuote {
+interface LivePrice {
   symbol: string
-  companyName: string
   price: number
-  lastPrice: number
   change: number
-  pChange: number
+  changePercent: number
   volume: number
-  marketCap: number
-  peRatio: number
-  dayHigh: number
-  dayLow: number
+  high: number
+  low: number
   open: number
-  previousClose: number
-  lastUpdateTime: string
-}
-
-interface MarketIndex {
-  symbol: string
-  name: string
-  price: number
-  change: number
-  pChange: number
-  isPositive: boolean
-  lastUpdate: number
+  companyName: string
   source: string
 }
 
-interface LivePricesState {
-  quotes: { [symbol: string]: StockQuote }
-  indices: MarketIndex[]
-  loading: boolean
-  error: string | null
-  lastUpdate: number
-  connectionStatus: "connected" | "disconnected" | "connecting"
-  dataSource: string
+interface UseLivePricesOptions {
+  symbols: string[]
+  updateInterval?: number
+  onPriceUpdate?: (symbol: string, price: LivePrice) => void
 }
 
-const DEFAULT_SYMBOLS = [
-  "RELIANCE.NS",
-  "TCS.NS",
-  "HDFCBANK.NS",
-  "INFY.NS",
-  "ICICIBANK.NS",
-  "BHARTIARTL.NS",
-  "ITC.NS",
-  "SBIN.NS",
-  "LT.NS",
-  "HCLTECH.NS",
-]
+interface UseLivePricesReturn {
+  prices: Map<string, LivePrice>
+  getPrice: (symbol: string) => LivePrice | null
+  isConnected: boolean
+  connectionStatus: "connected" | "connecting" | "disconnected" | "error"
+  lastUpdate: Date | null
+  reconnect: () => void
+}
 
-export function useLivePrices(symbols: string[] = DEFAULT_SYMBOLS) {
-  const [state, setState] = useState<LivePricesState>({
-    quotes: {},
-    indices: [],
-    loading: true,
-    error: null,
-    lastUpdate: 0,
-    connectionStatus: "connecting",
-    dataSource: "Unknown",
-  })
+export function useLivePrices({
+  symbols,
+  updateInterval = 2000,
+  onPriceUpdate,
+}: UseLivePricesOptions): UseLivePricesReturn {
+  const [prices, setPrices] = useState<Map<string, LivePrice>>(new Map())
+  const [isConnected, setIsConnected] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "connecting" | "disconnected" | "error">(
+    "disconnected",
+  )
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
-  // Fetch individual stock quote with enhanced error handling
-  const fetchQuote = useCallback(async (symbol: string): Promise<StockQuote | null> => {
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isComponentMountedRef = useRef(true)
+  const lastFetchTimeRef = useRef<number>(0)
+
+  const fetchPriceData = useCallback(async (symbol: string): Promise<LivePrice | null> => {
     try {
       const response = await fetch(`/api/yahoo-quote?symbol=${encodeURIComponent(symbol)}`, {
-        method: "GET",
+        cache: "no-store",
         headers: {
           "Cache-Control": "no-cache",
         },
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`HTTP ${response.status}`)
       }
 
       const data = await response.json()
 
-      if (data.success && data.quote) {
-        return data.quote
-      } else {
-        throw new Error(data.error || "Failed to fetch quote")
+      if (data.success && data.data) {
+        return {
+          symbol: data.data.symbol,
+          price: data.data.price,
+          change: data.data.change,
+          changePercent: data.data.changePercent,
+          volume: data.data.volume,
+          high: data.data.high,
+          low: data.data.low,
+          open: data.data.open,
+          companyName: data.data.companyName,
+          source: data.data.source,
+        }
       }
+
+      return null
     } catch (error) {
-      console.error(`Error fetching quote for ${symbol}:`, error)
+      console.error(`Error fetching price for ${symbol}:`, error)
       return null
     }
   }, [])
 
-  // Fetch market indices with enhanced error handling
-  const fetchIndices = useCallback(async (): Promise<{ indices: MarketIndex[]; source: string }> => {
-    try {
-      const response = await fetch("/api/indian-indices", {
-        method: "GET",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-
-      const data = await response.json()
-
-      if (data.success && data.indices) {
-        return {
-          indices: data.indices,
-          source: data.source || "Unknown",
-        }
-      } else {
-        throw new Error(data.error || "Failed to fetch indices")
-      }
-    } catch (error) {
-      console.error("Error fetching indices:", error)
-      return {
-        indices: [],
-        source: "Error",
-      }
+  const updatePrices = useCallback(async () => {
+    // Prevent multiple simultaneous fetches
+    const now = Date.now()
+    if (now - lastFetchTimeRef.current < 1000) {
+      return
     }
-  }, [])
+    lastFetchTimeRef.current = now
 
-  // Fetch all data with staggered requests to avoid rate limiting
-  const fetchAllData = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, connectionStatus: "connecting" }))
+    if (!isComponentMountedRef.current) return
+
+    setConnectionStatus("connecting")
 
     try {
-      // Fetch indices first
-      const { indices, source: indicesSource } = await fetchIndices()
+      const pricePromises = symbols.map((symbol) => fetchPriceData(symbol))
+      const results = await Promise.allSettled(pricePromises)
 
-      // Fetch quotes with staggered delays to avoid rate limiting
-      const quotePromises = symbols.map(
-        (symbol, index) =>
-          new Promise<{ symbol: string; quote: StockQuote | null }>((resolve) => {
-            setTimeout(async () => {
-              const quote = await fetchQuote(symbol)
-              resolve({ symbol, quote })
-            }, index * 200) // 200ms delay between requests
-          }),
-      )
+      const newPrices = new Map<string, LivePrice>()
+      let successCount = 0
 
-      // Wait for all quote requests with timeout
-      const timeoutPromise = new Promise<{ symbol: string; quote: StockQuote | null }[]>((_, reject) =>
-        setTimeout(() => reject(new Error("Quotes fetch timeout")), 30000),
-      )
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value) {
+          const price = result.value
+          newPrices.set(symbols[index], price)
+          successCount++
 
-      let quoteResults: { symbol: string; quote: StockQuote | null }[] = []
-      let quotesSource = "Unknown"
-
-      try {
-        quoteResults = await Promise.race([Promise.all(quotePromises), timeoutPromise])
-      } catch (error) {
-        console.warn("Quotes fetch timed out or failed:", error)
-      }
-
-      // Process quote results
-      const newQuotes: { [symbol: string]: StockQuote } = {}
-      let successfulQuotes = 0
-
-      quoteResults.forEach(({ symbol, quote }) => {
-        if (quote) {
-          newQuotes[symbol] = quote
-          successfulQuotes++
+          // Call onPriceUpdate callback
+          if (onPriceUpdate) {
+            onPriceUpdate(symbols[index], price)
+          }
         }
       })
 
-      // Determine overall data source and connection status
-      const hasRealData = successfulQuotes > 0 || indices.length > 0
-      const isSimulated =
-        indicesSource.includes("Simulation") ||
-        Object.values(newQuotes).some((q) => q.lastUpdateTime.includes("Simulation"))
+      if (isComponentMountedRef.current) {
+        setPrices(newPrices)
+        setLastUpdate(new Date())
 
-      quotesSource = successfulQuotes > 0 ? (isSimulated ? "Enhanced Simulation" : "Yahoo Finance API") : "No Data"
-
-      const overallSource = indices.length > 0 ? indicesSource : quotesSource
-      const connectionStatus: "connected" | "disconnected" | "connecting" = hasRealData ? "connected" : "disconnected"
-
-      setState((prev) => ({
-        ...prev,
-        quotes: newQuotes,
-        indices,
-        loading: false,
-        error: successfulQuotes === 0 && indices.length === 0 ? "Failed to fetch any data" : null,
-        lastUpdate: Date.now(),
-        connectionStatus,
-        dataSource: overallSource,
-      }))
-    } catch (error) {
-      console.error("Error in fetchAllData:", error)
-      setState((prev) => ({
-        ...prev,
-        loading: false,
-        error: error instanceof Error ? error.message : "Unknown error occurred",
-        connectionStatus: "disconnected",
-        dataSource: "Error",
-      }))
-    }
-  }, [symbols, fetchQuote, fetchIndices])
-
-  // Refresh single quote
-  const refreshQuote = useCallback(
-    async (symbol: string) => {
-      try {
-        const quote = await fetchQuote(symbol)
-        if (quote) {
-          setState((prev) => ({
-            ...prev,
-            quotes: {
-              ...prev.quotes,
-              [symbol]: quote,
-            },
-            lastUpdate: Date.now(),
-            error: null,
-          }))
+        if (successCount > 0) {
+          setIsConnected(true)
+          setConnectionStatus("connected")
+        } else {
+          setIsConnected(false)
+          setConnectionStatus("error")
         }
-      } catch (error) {
-        console.error(`Error refreshing quote for ${symbol}:`, error)
       }
+    } catch (error) {
+      console.error("Error updating prices:", error)
+      if (isComponentMountedRef.current) {
+        setIsConnected(false)
+        setConnectionStatus("error")
+      }
+    }
+  }, [symbols, fetchPriceData, onPriceUpdate])
+
+  const reconnect = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+    }
+    updatePrices()
+    intervalRef.current = setInterval(updatePrices, updateInterval)
+  }, [updatePrices, updateInterval])
+
+  const getPrice = useCallback(
+    (symbol: string): LivePrice | null => {
+      return prices.get(symbol) || null
     },
-    [fetchQuote],
+    [prices],
   )
 
-  // Manual refresh function
-  const refresh = useCallback(() => {
-    fetchAllData()
-  }, [fetchAllData])
-
-  // Initial fetch and periodic updates
   useEffect(() => {
-    fetchAllData()
+    isComponentMountedRef.current = true
 
-    // Set up periodic updates with longer intervals to respect rate limits
-    const interval = setInterval(() => {
-      fetchAllData()
-    }, 4000) // 4 seconds between full updates
+    // Initial fetch
+    updatePrices()
 
-    return () => clearInterval(interval)
-  }, [fetchAllData])
+    // Set up interval
+    intervalRef.current = setInterval(updatePrices, updateInterval)
 
-  // Return state and utility functions
+    // Cleanup function
+    return () => {
+      isComponentMountedRef.current = false
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [updatePrices, updateInterval])
+
   return {
-    ...state,
-    refresh,
-    refreshQuote,
-    isConnected: state.connectionStatus === "connected",
-    isLoading: state.loading,
-    hasError: !!state.error,
+    prices,
+    getPrice,
+    isConnected,
+    connectionStatus,
+    lastUpdate,
+    reconnect,
   }
 }
-
-export type { StockQuote, MarketIndex, LivePricesState }
