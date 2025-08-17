@@ -4,9 +4,22 @@
 
 ### Prerequisites
 - Node.js 18+ installed
-- npm or yarn package manager
+- npm 8+ package manager
+- Git
 - Vercel account (recommended)
-- Domain access (echart.in)
+
+### One-Click Deployment
+
+\`\`\`bash
+# Make script executable
+chmod +x deploy.sh
+
+# Deploy to production
+./deploy.sh production
+
+# Deploy to preview
+./deploy.sh preview
+\`\`\`
 
 ### Environment Setup
 
@@ -22,16 +35,29 @@
    \`\`\`
 
 3. **Set up environment variables:**
-   \`\`\`bash
-   cp .env.example .env.local
-   \`\`\`
-   
-   Edit `.env.local` with your actual values:
+   Create `.env.local` file:
    \`\`\`env
    NODE_ENV=production
    NEXT_PUBLIC_APP_URL=https://echart.in
    NEXT_PUBLIC_DOMAIN=echart.in
-   # Add other required variables...
+   NEXT_PUBLIC_ENABLE_LIVE_DATA=true
+   NEXT_PUBLIC_ENABLE_AI_CHAT=true
+   \`\`\`
+   
+   Edit `.env.local` with your actual values:
+   \`\`\`env
+   # External APIs
+   YAHOO_FINANCE_API_KEY=your_key_here
+   NSE_API_KEY=your_key_here
+   OPENAI_API_KEY=your_key_here
+
+   # Database
+   DATABASE_URL=postgresql://...
+   REDIS_URL=redis://...
+
+   # Analytics
+   GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+   VERCEL_ANALYTICS_ID=your_id_here
    \`\`\`
 
 4. **Test locally:**
@@ -49,7 +75,7 @@
    \`\`\`bash
    npm install -g vercel
    vercel login
-   vercel
+   vercel --prod
    \`\`\`
 
 2. **Configure custom domain:**
@@ -62,14 +88,11 @@
    - In Vercel Dashboard → Settings → Environment Variables
    - Add all variables from `.env.example`
 
-#### Manual Deployment
-\`\`\`bash
-# Deploy to production
-npm run deploy
-
-# Deploy preview
-npm run deploy:preview
-\`\`\`
+#### Manual Steps
+1. Connect GitHub repository to Vercel
+2. Configure environment variables
+3. Set custom domain: `echart.in`
+4. Enable automatic deployments
 
 ### Option 2: Docker Deployment
 
@@ -80,25 +103,7 @@ npm run deploy:preview
 
 2. **Run container:**
    \`\`\`bash
-   docker run -p 3000:3000 \
-     -e NODE_ENV=production \
-     -e NEXT_PUBLIC_APP_URL=https://echart.in \
-     -e NEXT_PUBLIC_DOMAIN=echart.in \
-     echart-trading
-   \`\`\`
-
-3. **Using Docker Compose:**
-   \`\`\`yaml
-   version: '3.8'
-   services:
-     echart:
-       build: .
-       ports:
-         - "3000:3000"
-       environment:
-         - NODE_ENV=production
-         - NEXT_PUBLIC_APP_URL=https://echart.in
-         - NEXT_PUBLIC_DOMAIN=echart.in
+   docker run -p 3000:3000 echart-trading
    \`\`\`
 
 ### Option 3: Traditional VPS
@@ -118,7 +123,7 @@ npm run deploy:preview
    # Clone and build
    git clone https://github.com/your-username/echart-trading-platform.git
    cd echart-trading-platform
-   npm install
+   npm ci
    npm run build
    
    # Start with PM2
@@ -152,20 +157,17 @@ npm run deploy:preview
 ### Environment Variables
 
 #### Required Variables
+Create `.env.local` file:
 \`\`\`env
 NODE_ENV=production
 NEXT_PUBLIC_APP_URL=https://echart.in
 NEXT_PUBLIC_DOMAIN=echart.in
+NEXT_PUBLIC_ENABLE_LIVE_DATA=true
+NEXT_PUBLIC_ENABLE_AI_CHAT=true
 \`\`\`
 
 #### Optional Variables
 \`\`\`env
-# Feature flags
-NEXT_PUBLIC_ENABLE_LIVE_DATA=true
-NEXT_PUBLIC_ENABLE_AI_CHAT=true
-NEXT_PUBLIC_ENABLE_NOTIFICATIONS=true
-NEXT_PUBLIC_ENABLE_PORTFOLIO=true
-
 # External APIs
 YAHOO_FINANCE_API_KEY=your_key_here
 NSE_API_KEY=your_key_here
@@ -177,6 +179,7 @@ REDIS_URL=redis://...
 
 # Analytics
 GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+VERCEL_ANALYTICS_ID=your_id_here
 \`\`\`
 
 ### DNS Configuration
@@ -201,7 +204,7 @@ Value: cname.vercel-dns.com (Alternative)
 
 ### Health Check Endpoint
 - URL: `https://echart.in/api/health`
-- Returns: JSON with application status
+- Returns: JSON with application status, memory usage, uptime
 - Use for load balancer health checks
 
 ### Monitoring Setup
@@ -216,26 +219,17 @@ vercel logs
 pm2 logs echart
 \`\`\`
 
-## 🔒 Security
+## 🔒 Security Configuration
 
-### SSL Certificate
-- **Vercel**: Automatic SSL with Let's Encrypt
-- **VPS**: Use Certbot for Let's Encrypt
+### Security Headers (Configured in vercel.json)
+- X-Frame-Options: DENY
+- X-Content-Type-Options: nosniff
+- X-XSS-Protection: 1; mode=block
+- Referrer-Policy: origin-when-cross-origin
 
-\`\`\`bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Get certificate
-sudo certbot --nginx -d echart.in -d www.echart.in
-\`\`\`
-
-### Security Headers
-Configured in `vercel.json` and `next.config.mjs`:
-- Content Security Policy
-- X-Frame-Options
-- X-XSS-Protection
-- Strict Transport Security
+### Rate Limiting
+- API endpoints: 100 requests/minute
+- WebSocket connections: 10/minute
 
 ## 🚨 Troubleshooting
 
@@ -256,43 +250,43 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 npm run build
 \`\`\`
 
-#### Port Conflicts
+#### Port Already in Use
 \`\`\`bash
 # Kill process on port 3000
 lsof -ti:3000 | xargs kill -9
 \`\`\`
 
-#### Environment Variable Issues
+#### Environment Variables Not Loading
 \`\`\`bash
 # Check environment variables
 printenv | grep NEXT_PUBLIC
+
+# Verify .env.local exists
+ls -la .env*
 \`\`\`
 
 ### Debug Commands
 \`\`\`bash
-# View build logs
-npm run build 2>&1 | tee build.log
+# Check build output
+npm run build -- --debug
 
-# Test API endpoints
-curl -v https://echart.in/api/health
-curl -v https://echart.in/api/sitemap
-curl -v https://echart.in/api/robots
+# Analyze bundle size
+npm run analyze
 
-# Check DNS
-nslookup echart.in
-dig echart.in
+# Type checking
+npm run type-check
 
-# Test SSL
-openssl s_client -connect echart.in:443
+# Linting
+npm run lint
 \`\`\`
 
 ## 📈 Performance Optimization
 
 ### Build Optimization
-- Bundle analysis: `npm run analyze`
 - Tree shaking enabled
 - Code splitting configured
-- Image optimization enabled
+- Image optimization active
+- Static file compression
 
 ### Caching Strategy
 - Static assets: 1 year cache
@@ -301,73 +295,72 @@ openssl s_client -connect echart.in:443
 
 ### CDN Configuration
 - Vercel Edge Network (automatic)
-- Custom CDN: Configure in `next.config.mjs`
+- Custom CDN: Cloudflare (optional)
 
 ## 🔄 CI/CD Pipeline
 
 ### GitHub Actions
 - Automatic testing on PR
 - Deploy on merge to main
-- Lighthouse performance checks
-- Security scanning
+- Environment-specific deployments
 
-### Manual Deployment
+### Deployment Stages
+1. Install dependencies
+2. Run linting and type checking
+3. Run tests
+4. Build application
+5. Deploy to Vercel
+6. Run health checks
+7. Performance testing
+
+## 📞 Support & Maintenance
+
+### Monitoring URLs
+- Production: https://echart.in
+- Health Check: https://echart.in/api/health
+- API Status: https://echart.in/api/status
+
+### Backup Strategy
+- Database backups (if applicable)
+- Environment variable backups
+- Code repository backups
+
+### Update Process
 \`\`\`bash
-# Quick deployment script
-chmod +x deploy.sh
+# Update dependencies
+npm update
+
+# Security audit
+npm audit fix
+
+# Rebuild and deploy
 ./deploy.sh production
 \`\`\`
 
-## 📞 Support
+## 🎉 Success Checklist
 
-### Monitoring URLs
-- **Production**: https://echart.in
-- **Health Check**: https://echart.in/api/health
-- **Sitemap**: https://echart.in/sitemap.xml
-- **Robots**: https://echart.in/robots.txt
-
-### Performance Metrics
-- Core Web Vitals monitoring
-- Real User Monitoring (RUM)
-- Server-side performance tracking
-
-### Error Tracking
-- Vercel Analytics (built-in)
-- Custom error boundaries
-- API error logging
-
-## ✅ Deployment Checklist
-
-- [ ] Environment variables configured
-- [ ] Domain DNS records updated
+- [ ] Domain configured (echart.in)
 - [ ] SSL certificate active
-- [ ] Health check responding (200 OK)
-- [ ] All features working correctly
-- [ ] Performance optimized (Lighthouse score >90)
+- [ ] Environment variables set
+- [ ] Health check responding
+- [ ] All features working
+- [ ] Performance optimized
 - [ ] Security headers configured
-- [ ] Monitoring and alerts set up
-- [ ] Backup strategy implemented
-- [ ] Documentation updated
+- [ ] Monitoring setup
+- [ ] Backup strategy in place
 
-## 🎉 Success!
+## 📊 Performance Metrics
 
-Your EChart Trading Platform should now be live at:
-**https://echart.in**
+### Target Metrics
+- First Contentful Paint: < 1.5s
+- Largest Contentful Paint: < 2.5s
+- Cumulative Layout Shift: < 0.1
+- First Input Delay: < 100ms
 
-### Features Deployed:
-- 📈 Live NSE market data with real-time updates
-- 🤖 AI-powered trading insights and chat
-- 📊 Technical analysis with advanced indicators
-- 📱 Mobile-responsive design
-- ⚡ High-performance optimized build
-- 🔒 Production-ready security
-- 🌐 SEO-optimized with comprehensive sitemap
+### Monitoring Tools
+- Vercel Analytics
+- Google PageSpeed Insights
+- Lighthouse CI
+- Real User Monitoring
 
-### Next Steps:
-1. Monitor application performance
-2. Set up user analytics
-3. Configure error tracking
-4. Plan feature updates
-5. Scale infrastructure as needed
-
-For support, contact: admin@echart.in
+Your EChart Trading Platform is now ready for production! 🚀📈

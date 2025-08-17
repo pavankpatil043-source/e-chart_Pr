@@ -1,137 +1,88 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
-  const environment = process.env.NODE_ENV || "development"
 
-  const robots = `# EChart Trading Platform - Robots.txt
-# Environment: ${environment}
-# Generated: ${new Date().toISOString()}
-# https://echart.in
+  const robotsTxt = `# Robots.txt for EChart Trading Platform
+# Generated on ${new Date().toISOString()}
 
+# Allow all web crawlers
 User-agent: *
 Allow: /
 
-# Allow all major search engines
+# Specific rules for major search engines
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Slurp
 Allow: /
+Crawl-delay: 2
 
-User-agent: DuckDuckBot
-Allow: /
-
-User-agent: Baiduspider
-Allow: /
-
-User-agent: YandexBot
-Allow: /
-
-# Disallow admin and private areas
+# Block access to sensitive areas
+Disallow: /api/
 Disallow: /admin/
-Disallow: /api/private/
+Disallow: /private/
 Disallow: /_next/
-Disallow: /static/private/
+Disallow: /static/
+Disallow: /.well-known/
+Disallow: /health
+Disallow: /debug/
 
-# Disallow user-specific content
+# Block access to user-specific content
 Disallow: /user/
-Disallow: /profile/
 Disallow: /account/
+Disallow: /profile/
+Disallow: /settings/
 Disallow: /dashboard/private/
 
-# Disallow temporary and cache files
-Disallow: /tmp/
-Disallow: /cache/
-Disallow: /*.json$
-Disallow: /*.xml$
-Disallow: /*.txt$
+# Block access to temporary or test pages
+Disallow: /test/
+Disallow: /temp/
+Disallow: /staging/
+Disallow: /dev/
 
-# Allow important files
-Allow: /sitemap.xml
-Allow: /robots.txt
-Allow: /favicon.ico
-Allow: /manifest.json
-
-# Crawl delay (be respectful)
-Crawl-delay: 1
-
-# Sitemap location
-Sitemap: ${baseUrl}/sitemap.xml
-
-# Additional sitemaps (if needed)
-# Sitemap: ${baseUrl}/sitemap-news.xml
-# Sitemap: ${baseUrl}/sitemap-stocks.xml
-
-# Host directive (preferred domain)
-Host: ${baseUrl}
-
-# Clean URLs preference
-# Prefer clean URLs over query parameters
+# Block access to search and filter pages with parameters
 Disallow: /*?*
-Allow: /*?utm_*
-Allow: /*?ref=*
-Allow: /*?source=*
+Disallow: /search?*
+Disallow: /filter?*
+
+# Allow specific important pages with parameters
+Allow: /stock/*
+Allow: /index/*
+Allow: /news/*
+Allow: /analysis/*
 
 # Block common bot traps
 Disallow: /trap/
 Disallow: /honeypot/
-Disallow: /bot-trap/
 
-# Block development and testing paths
-Disallow: /dev/
-Disallow: /test/
-Disallow: /staging/
-Disallow: /beta/
+# Block access to common CMS and development files
+Disallow: /.git/
+Disallow: /.env
+Disallow: /package.json
+Disallow: /yarn.lock
+Disallow: /package-lock.json
+Disallow: /node_modules/
 
-# Block sensitive API endpoints
-Disallow: /api/auth/
-Disallow: /api/admin/
-Disallow: /api/internal/
-Disallow: /api/private/
+# Block access to backup and log files
+Disallow: /*.log
+Disallow: /*.bak
+Disallow: /*.tmp
+Disallow: /*.old
 
-# Allow public API documentation
-Allow: /api/docs/
-Allow: /api/health/
-Allow: /api/status/
+# Sitemap location
+Sitemap: ${baseUrl}/sitemap.xml
 
-# Media files - allow indexing
-Allow: /images/
-Allow: /photos/
-Allow: /media/
-Allow: /assets/
+# Additional sitemaps (if you have them)
+# Sitemap: ${baseUrl}/sitemap-news.xml
+# Sitemap: ${baseUrl}/sitemap-stocks.xml
 
-# Block log files and backups
-Disallow: /*.log$
-Disallow: /*.bak$
-Disallow: /*.old$
-Disallow: /*.tmp$
-
-# Block configuration files
-Disallow: /*.config$
-Disallow: /*.conf$
-Disallow: /*.ini$
-Disallow: /*.env$
-
-# Special instructions for financial data crawlers
-User-agent: FinancialBot
-Crawl-delay: 5
-Allow: /api/public/
-Allow: /market-data/
-Allow: /stocks/
-Allow: /indices/
-
-# Instructions for news aggregators
-User-agent: NewsBot
-Allow: /news/
-Allow: /analysis/
-Allow: /market-updates/
-Crawl-delay: 2
-
-# Block aggressive crawlers
+# Crawl delay for aggressive bots
 User-agent: AhrefsBot
 Crawl-delay: 10
 
@@ -139,9 +90,57 @@ User-agent: MJ12bot
 Crawl-delay: 10
 
 User-agent: DotBot
+Crawl-delay: 10
+
+# Block known bad bots
+User-agent: SemrushBot
 Disallow: /
 
-# Block AI training crawlers (optional)
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: BLEXBot
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /
+
+# Block social media bots from sensitive content
+User-agent: facebookexternalhit
+Disallow: /api/
+Disallow: /user/
+Allow: /
+
+User-agent: Twitterbot
+Disallow: /api/
+Disallow: /user/
+Allow: /
+
+User-agent: LinkedInBot
+Disallow: /api/
+Disallow: /user/
+Allow: /
+
+# Allow financial data aggregators (be selective)
+User-agent: YahooSeeker
+Allow: /stock/
+Allow: /index/
+Allow: /news/
+Disallow: /
+
+User-agent: GoogleOther
+Allow: /stock/
+Allow: /index/
+Allow: /news/
+Disallow: /
+
+# Block AI training bots (optional - adjust based on your policy)
 User-agent: GPTBot
 Disallow: /
 
@@ -154,31 +153,75 @@ Disallow: /
 User-agent: anthropic-ai
 Disallow: /
 
-# Allow social media crawlers
-User-agent: facebookexternalhit
+User-agent: Claude-Web
+Disallow: /
+
+# Allow legitimate financial services
+User-agent: BloombergBot
+Allow: /
+Crawl-delay: 2
+
+User-agent: ReutersBot
+Allow: /
+Crawl-delay: 2
+
+# Special rules for mobile crawlers
+User-agent: Googlebot-Mobile
+Allow: /
+Crawl-delay: 1
+
+# Rules for image crawlers
+User-agent: Googlebot-Image
+Allow: /images/
+Allow: /static/images/
+Disallow: /user/
+Disallow: /private/
+
+# Rules for news crawlers
+User-agent: Googlebot-News
+Allow: /news/
+Allow: /analysis/
+Crawl-delay: 1
+
+# Block archive crawlers from dynamic content
+User-agent: ia_archiver
+Disallow: /api/
+Disallow: /real-time/
 Allow: /
 
-User-agent: Twitterbot
+User-agent: Wayback
+Disallow: /api/
+Disallow: /real-time/
 Allow: /
 
-User-agent: LinkedInBot
-Allow: /
+# Host directive (optional)
+Host: ${baseUrl.replace("https://", "").replace("http://", "")}
 
-User-agent: WhatsApp
-Allow: /
-
-User-agent: TelegramBot
-Allow: /
+# Clean-param directive for better crawling
+# Clean-param: utm_source&utm_medium&utm_campaign
 
 # Last updated: ${new Date().toISOString()}
-# Contact: admin@echart.in
-# More info: ${baseUrl}/robots-info`
+# Contact: webmaster@echart.in
+# For questions about this robots.txt file, please contact our technical team.
+`
 
-  return new NextResponse(robots, {
+  return new NextResponse(robotsTxt, {
     status: 200,
     headers: {
       "Content-Type": "text/plain",
-      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+      "Cache-Control": "public, max-age=86400", // Cache for 24 hours
+      "X-Robots-Tag": "noindex, nofollow", // Don't index robots.txt itself
+    },
+  })
+}
+
+// Handle HEAD requests
+export async function HEAD() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain",
+      "Cache-Control": "public, max-age=86400",
     },
   })
 }

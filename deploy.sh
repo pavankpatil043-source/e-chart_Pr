@@ -2,13 +2,9 @@
 
 # EChart Trading Platform Deployment Script
 # Usage: ./deploy.sh [environment]
+# Example: ./deploy.sh production
 
 set -e
-
-ENVIRONMENT=${1:-production}
-DOMAIN="echart.in"
-
-echo "🚀 Starting deployment to $ENVIRONMENT..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -17,81 +13,79 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+# Default environment
+ENVIRONMENT=${1:-production}
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+echo -e "${BLUE}🚀 Starting EChart Trading Platform deployment...${NC}"
+echo -e "${BLUE}Environment: ${ENVIRONMENT}${NC}"
 
 # Check if required tools are installed
 check_dependencies() {
-    print_status "Checking dependencies..."
+    echo -e "${YELLOW}📋 Checking dependencies...${NC}"
     
     if ! command -v node &> /dev/null; then
-        print_error "Node.js is not installed"
+        echo -e "${RED}❌ Node.js is not installed${NC}"
         exit 1
     fi
     
     if ! command -v npm &> /dev/null; then
-        print_error "npm is not installed"
+        echo -e "${RED}❌ npm is not installed${NC}"
         exit 1
     fi
     
     if ! command -v vercel &> /dev/null; then
-        print_warning "Vercel CLI not found. Installing..."
+        echo -e "${YELLOW}⚠️  Vercel CLI not found. Installing...${NC}"
         npm install -g vercel@latest
     fi
     
-    print_success "All dependencies are available"
+    echo -e "${GREEN}✅ All dependencies are available${NC}"
 }
 
-# Install project dependencies
+# Clean previous builds
+clean_build() {
+    echo -e "${YELLOW}🧹 Cleaning previous builds...${NC}"
+    rm -rf .next
+    rm -rf out
+    rm -rf dist
+    rm -rf node_modules/.cache
+    echo -e "${GREEN}✅ Clean completed${NC}"
+}
+
+# Install dependencies
 install_dependencies() {
-    print_status "Installing project dependencies..."
+    echo -e "${YELLOW}📦 Installing dependencies...${NC}"
     npm ci
-    print_success "Dependencies installed"
+    echo -e "${GREEN}✅ Dependencies installed${NC}"
 }
 
-# Run tests and linting
+# Run tests
 run_tests() {
-    print_status "Running tests and linting..."
+    echo -e "${YELLOW}🧪 Running tests...${NC}"
+    npm run lint
+    npm run type-check
     
-    if npm run lint; then
-        print_success "Linting passed"
+    if npm run test --if-present; then
+        echo -e "${GREEN}✅ All tests passed${NC}"
     else
-        print_error "Linting failed"
-        exit 1
+        echo -e "${YELLOW}⚠️  No tests found or tests failed${NC}"
     fi
+}
+
+# Build application
+build_application() {
+    echo -e "${YELLOW}🔨 Building application...${NC}"
     
-    if npm run type-check; then
-        print_success "Type checking passed"
-    else
-        print_error "Type checking failed"
-        exit 1
-    fi
+    export NODE_ENV=production
+    export NEXT_PUBLIC_APP_URL=https://echart.in
+    export NEXT_PUBLIC_DOMAIN=echart.in
     
-    if npm run build; then
-        print_success "Build successful"
-    else
-        print_error "Build failed"
-        exit 1
-    fi
+    npm run build
+    echo -e "${GREEN}✅ Build completed${NC}"
 }
 
 # Deploy to Vercel
 deploy_to_vercel() {
-    print_status "Deploying to Vercel..."
+    echo -e "${YELLOW}🌐 Deploying to Vercel...${NC}"
     
     if [ "$ENVIRONMENT" = "production" ]; then
         vercel --prod --yes
@@ -99,61 +93,62 @@ deploy_to_vercel() {
         vercel --yes
     fi
     
-    print_success "Deployment completed"
+    echo -e "${GREEN}✅ Deployment completed${NC}"
 }
 
 # Health check
 health_check() {
-    print_status "Running health check..."
-    sleep 10
+    echo -e "${YELLOW}🏥 Running health check...${NC}"
     
-    if [ "$ENVIRONMENT" = "production" ]; then
-        HEALTH_URL="https://$DOMAIN/api/health"
-    else
-        # Get preview URL from Vercel output (simplified)
-        HEALTH_URL="https://echart-in.vercel.app/api/health"
-    fi
+    sleep 30
     
-    if curl -f "$HEALTH_URL" > /dev/null 2>&1; then
-        print_success "Health check passed: $HEALTH_URL"
+    if curl -f https://echart.in/api/health; then
+        echo -e "${GREEN}✅ Health check passed${NC}"
     else
-        print_warning "Health check failed, but deployment may still be successful"
+        echo -e "${RED}❌ Health check failed${NC}"
+        exit 1
     fi
 }
 
-# Main deployment process
+# Docker deployment (alternative)
+deploy_docker() {
+    echo -e "${YELLOW}🐳 Building Docker image...${NC}"
+    
+    docker build -t echart-trading:latest .
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        echo -e "${YELLOW}🚀 Running Docker container...${NC}"
+        docker run -d -p 3000:3000 --name echart-trading echart-trading:latest
+    fi
+    
+    echo -e "${GREEN}✅ Docker deployment completed${NC}"
+}
+
+# Main deployment flow
 main() {
-    echo "======================================"
-    echo "🏦 EChart Trading Platform Deployment"
-    echo "======================================"
-    echo "Environment: $ENVIRONMENT"
-    echo "Domain: $DOMAIN"
-    echo "======================================"
+    echo -e "${BLUE}🎯 Starting deployment process...${NC}"
     
     check_dependencies
+    clean_build
     install_dependencies
     run_tests
-    deploy_to_vercel
-    health_check
+    build_application
     
-    echo "======================================"
-    print_success "🎉 Deployment completed successfully!"
-    echo "======================================"
-    
-    if [ "$ENVIRONMENT" = "production" ]; then
-        echo "🌐 Production URL: https://$DOMAIN"
-        echo "🔍 Health Check: https://$DOMAIN/api/health"
+    # Choose deployment method
+    if [ "$2" = "docker" ]; then
+        deploy_docker
+    else
+        deploy_to_vercel
+        health_check
     fi
     
-    echo "📊 Features deployed:"
-    echo "  ✅ Live NSE market data"
-    echo "  ✅ AI-powered trading insights"
-    echo "  ✅ Technical analysis tools"
-    echo "  ✅ Real-time price updates"
-    echo "  ✅ Mobile-responsive design"
-    echo "  ✅ Performance optimizations"
-    echo "======================================"
+    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
+    echo -e "${GREEN}🌐 Your EChart Trading Platform is live at: https://echart.in${NC}"
+    echo -e "${GREEN}🔍 Health check: https://echart.in/api/health${NC}"
 }
 
+# Error handling
+trap 'echo -e "${RED}❌ Deployment failed${NC}"; exit 1' ERR
+
 # Run main function
-main
+main "$@"
