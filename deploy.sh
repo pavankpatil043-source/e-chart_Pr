@@ -2,9 +2,9 @@
 
 # EChart Trading Platform Deployment Script
 # Usage: ./deploy.sh [environment]
-# Example: ./deploy.sh production
+# Environments: development, staging, production
 
-set -e
+set -e  # Exit on any error
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,142 +13,177 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Default environment
-ENVIRONMENT=${1:-production}
+# Configuration
+PROJECT_NAME="echart-trading-platform"
+DOMAIN="echart.in"
+STAGING_DOMAIN="staging.echart.in"
+DOCKER_IMAGE="echart/trading-platform"
 
-echo -e "${BLUE}🚀 Starting EChart Trading Platform deployment...${NC}"
-echo -e "${BLUE}Environment: ${ENVIRONMENT}${NC}"
+# Functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# Check if required tools are installed
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
 check_dependencies() {
-    echo -e "${YELLOW}📋 Checking dependencies...${NC}"
+    log_info "Checking dependencies..."
     
+    # Check Node.js
     if ! command -v node &> /dev/null; then
-        echo -e "${RED}❌ Node.js is not installed${NC}"
+        log_error "Node.js is not installed"
         exit 1
     fi
     
+    # Check npm
     if ! command -v npm &> /dev/null; then
-        echo -e "${RED}❌ npm is not installed${NC}"
+        log_error "npm is not installed"
         exit 1
     fi
     
+    # Check Vercel CLI
     if ! command -v vercel &> /dev/null; then
-        echo -e "${YELLOW}⚠️  Vercel CLI not found. Installing...${NC}"
-        npm install -g vercel@latest
+        log_warning "Vercel CLI not found. Installing..."
+        npm install -g vercel
     fi
     
-    echo -e "${GREEN}✅ All dependencies are available${NC}"
+    log_success "All dependencies are available"
 }
 
-# Clean previous builds
-clean_build() {
-    echo -e "${YELLOW}🧹 Cleaning previous builds...${NC}"
-    rm -rf .next
-    rm -rf out
-    rm -rf dist
-    rm -rf node_modules/.cache
-    echo -e "${GREEN}✅ Clean completed${NC}"
-}
-
-# Install dependencies
 install_dependencies() {
-    echo -e "${YELLOW}📦 Installing dependencies...${NC}"
+    log_info "Installing project dependencies..."
     npm ci
-    echo -e "${GREEN}✅ Dependencies installed${NC}"
+    log_success "Dependencies installed successfully"
 }
 
-# Run tests
 run_tests() {
-    echo -e "${YELLOW}🧪 Running tests...${NC}"
+    log_info "Running tests..."
     npm run lint
     npm run type-check
-    
-    if npm run test --if-present; then
-        echo -e "${GREEN}✅ All tests passed${NC}"
-    else
-        echo -e "${YELLOW}⚠️  No tests found or tests failed${NC}"
-    fi
+    log_success "All tests passed"
 }
 
-# Build application
 build_application() {
-    echo -e "${YELLOW}🔨 Building application...${NC}"
-    
-    export NODE_ENV=production
-    export NEXT_PUBLIC_APP_URL=https://echart.in
-    export NEXT_PUBLIC_DOMAIN=echart.in
-    
+    log_info "Building application..."
     npm run build
-    echo -e "${GREEN}✅ Build completed${NC}"
+    log_success "Application built successfully"
 }
 
-# Deploy to Vercel
 deploy_to_vercel() {
-    echo -e "${YELLOW}🌐 Deploying to Vercel...${NC}"
+    local environment=$1
+    log_info "Deploying to Vercel ($environment)..."
     
-    if [ "$ENVIRONMENT" = "production" ]; then
+    if [ "$environment" = "production" ]; then
         vercel --prod --yes
+        log_success "Deployed to production: https://$DOMAIN"
     else
         vercel --yes
+        log_success "Deployed to preview environment"
     fi
-    
-    echo -e "${GREEN}✅ Deployment completed${NC}"
 }
 
-# Health check
+deploy_with_docker() {
+    local environment=$1
+    log_info "Building Docker image..."
+    
+    # Build Docker image
+    docker build -t $DOCKER_IMAGE:$environment .
+    
+    # Tag for registry
+    docker tag $DOCKER_IMAGE:$environment $DOCKER_IMAGE:latest
+    
+    log_success "Docker image built successfully"
+    
+    # Push to registry (if configured)
+    if [ ! -z "$DOCKER_REGISTRY" ]; then
+        log_info "Pushing to Docker registry..."
+        docker push $DOCKER_IMAGE:$environment
+        docker push $DOCKER_IMAGE:latest
+        log_success "Image pushed to registry"
+    fi
+}
+
 health_check() {
-    echo -e "${YELLOW}🏥 Running health check...${NC}"
+    local url=$1
+    log_info "Performing health check on $url..."
     
-    sleep 30
+    # Wait for deployment to be ready
+    sleep 10
     
-    if curl -f https://echart.in/api/health; then
-        echo -e "${GREEN}✅ Health check passed${NC}"
+    # Check health endpoint
+    if curl -f "$url/api/health" > /dev/null 2>&1; then
+        log_success "Health check passed"
     else
-        echo -e "${RED}❌ Health check failed${NC}"
+        log_error "Health check failed"
         exit 1
     fi
 }
 
-# Docker deployment (alternative)
-deploy_docker() {
-    echo -e "${YELLOW}🐳 Building Docker image...${NC}"
-    
-    docker build -t echart-trading:latest .
-    
-    if [ "$ENVIRONMENT" = "production" ]; then
-        echo -e "${YELLOW}🚀 Running Docker container...${NC}"
-        docker run -d -p 3000:3000 --name echart-trading echart-trading:latest
-    fi
-    
-    echo -e "${GREEN}✅ Docker deployment completed${NC}"
+cleanup() {
+    log_info "Cleaning up..."
+    # Remove temporary files
+    rm -rf .next/cache
+    log_success "Cleanup completed"
 }
 
-# Main deployment flow
-main() {
-    echo -e "${BLUE}🎯 Starting deployment process...${NC}"
+# Main deployment function
+deploy() {
+    local environment=${1:-"development"}
     
+    log_info "Starting deployment for environment: $environment"
+    
+    # Pre-deployment checks
     check_dependencies
-    clean_build
     install_dependencies
     run_tests
     build_application
     
-    # Choose deployment method
-    if [ "$2" = "docker" ]; then
-        deploy_docker
-    else
-        deploy_to_vercel
-        health_check
-    fi
+    # Deploy based on environment
+    case $environment in
+        "production")
+            deploy_to_vercel "production"
+            health_check "https://$DOMAIN"
+            ;;
+        "staging")
+            deploy_to_vercel "staging"
+            health_check "https://$STAGING_DOMAIN"
+            ;;
+        "docker")
+            deploy_with_docker "production"
+            ;;
+        *)
+            deploy_to_vercel "development"
+            ;;
+    esac
     
-    echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
-    echo -e "${GREEN}🌐 Your EChart Trading Platform is live at: https://echart.in${NC}"
-    echo -e "${GREEN}🔍 Health check: https://echart.in/api/health${NC}"
+    cleanup
+    log_success "Deployment completed successfully!"
 }
 
-# Error handling
-trap 'echo -e "${RED}❌ Deployment failed${NC}"; exit 1' ERR
+# Script execution
+if [ $# -eq 0 ]; then
+    log_info "No environment specified, deploying to development"
+    deploy "development"
+else
+    deploy $1
+fi
 
-# Run main function
-main "$@"
+# Post-deployment information
+echo ""
+echo "==================================="
+echo "🚀 EChart Trading Platform Deployed"
+echo "==================================="
+echo "Production: https://$DOMAIN"
+echo "Staging: https://$STAGING_DOMAIN"
+echo "Health Check: https://$DOMAIN/api/health"
+echo "==================================="

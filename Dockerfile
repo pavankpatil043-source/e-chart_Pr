@@ -18,8 +18,6 @@ COPY . .
 
 # Set environment variables for build
 ENV NODE_ENV=production
-ENV NEXT_PUBLIC_APP_URL=https://echart.in
-ENV NEXT_PUBLIC_DOMAIN=echart.in
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build the application
