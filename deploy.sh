@@ -26,82 +26,41 @@ command -v npm >/dev/null 2>&1 || { echo -e "${RED}❌ npm is required but not i
 echo -e "${BLUE}📦 Installing dependencies...${NC}"
 npm ci
 
-# Run tests (if available)
+# Run tests if they exist
 if [ -f "package.json" ] && grep -q '"test"' package.json; then
     echo -e "${BLUE}🧪 Running tests...${NC}"
-    npm test || echo -e "${YELLOW}⚠️ Tests failed, continuing deployment...${NC}"
+    npm run test --if-present
 fi
 
 # Build the project
 echo -e "${BLUE}🔨 Building project...${NC}"
-export NODE_ENV=production
-export NEXT_PUBLIC_APP_URL=https://echart.in
-export NEXT_PUBLIC_DOMAIN=echart.in
 npm run build
 
+# Check if Vercel CLI is installed
+if ! command -v vercel &> /dev/null; then
+    echo -e "${YELLOW}📥 Installing Vercel CLI...${NC}"
+    npm install -g vercel@latest
+fi
+
 # Deploy based on environment
-if [ "$ENVIRONMENT" = "vercel" ] || [ "$ENVIRONMENT" = "production" ]; then
-    echo -e "${BLUE}🌐 Deploying to Vercel...${NC}"
-    
-    # Check if Vercel CLI is installed
-    if ! command -v vercel &> /dev/null; then
-        echo -e "${YELLOW}📥 Installing Vercel CLI...${NC}"
-        npm install -g vercel
-    fi
-    
-    # Deploy to Vercel
-    if [ "$ENVIRONMENT" = "production" ]; then
-        vercel --prod --confirm
-    else
-        vercel --confirm
-    fi
-    
-elif [ "$ENVIRONMENT" = "docker" ]; then
-    echo -e "${BLUE}🐳 Building Docker image...${NC}"
-    docker build -t echart-trading-platform .
-    
-    echo -e "${BLUE}🚀 Starting Docker container...${NC}"
-    docker run -d -p 3000:3000 --name echart-app echart-trading-platform
-    
-elif [ "$ENVIRONMENT" = "pm2" ]; then
-    echo -e "${BLUE}⚡ Deploying with PM2...${NC}"
-    
-    # Check if PM2 is installed
-    if ! command -v pm2 &> /dev/null; then
-        echo -e "${YELLOW}📥 Installing PM2...${NC}"
-        npm install -g pm2
-    fi
-    
-    # Start with PM2
-    pm2 start npm --name "echart-trading" -- start
-    pm2 save
-    
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo -e "${BLUE}🌐 Deploying to production...${NC}"
+    vercel --prod --confirm
 else
-    echo -e "${BLUE}🏃 Starting development server...${NC}"
-    npm run dev
+    echo -e "${BLUE}🔧 Deploying to preview...${NC}"
+    vercel --confirm
 fi
 
 echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
-echo -e "${GREEN}🎉 Your trading platform is now live at: https://echart.in${NC}"
+echo -e "${GREEN}🎉 Your EChart Trading Platform is now live!${NC}"
 
-# Health check
-echo -e "${BLUE}🔍 Performing health check...${NC}"
-sleep 5
+# Display useful information
+echo -e "${BLUE}📊 Useful commands:${NC}"
+echo -e "  ${YELLOW}vercel logs${NC} - View deployment logs"
+echo -e "  ${YELLOW}vercel domains${NC} - Manage custom domains"
+echo -e "  ${YELLOW}vercel env${NC} - Manage environment variables"
+echo -e "  ${YELLOW}vercel --help${NC} - View all available commands"
 
-if [ "$ENVIRONMENT" = "docker" ]; then
-    HEALTH_URL="http://localhost:3000/api/health"
-else
-    HEALTH_URL="https://echart.in/api/health"
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo -e "${GREEN}🌍 Production URL: https://echart.in${NC}"
 fi
-
-if curl -f -s "$HEALTH_URL" > /dev/null; then
-    echo -e "${GREEN}✅ Health check passed!${NC}"
-else
-    echo -e "${YELLOW}⚠️ Health check failed, but deployment may still be successful${NC}"
-fi
-
-echo -e "${BLUE}📊 Deployment Summary:${NC}"
-echo -e "  • Environment: ${ENVIRONMENT}"
-echo -e "  • Domain: https://echart.in"
-echo -e "  • Status: Deployed"
-echo -e "  • Features: Live NSE data, AI chat, Technical analysis"

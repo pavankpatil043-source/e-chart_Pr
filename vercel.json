@@ -1,24 +1,6 @@
 {
   "version": 2,
   "name": "echart-trading-platform",
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/sitemap.xml",
-      "dest": "/api/sitemap"
-    },
-    {
-      "src": "/robots.txt",
-      "dest": "/api/robots"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ],
   "env": {
     "NODE_ENV": "production",
     "NEXT_PUBLIC_APP_URL": "https://echart.in",
@@ -98,8 +80,12 @@
   ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/api/robots"
     }
   ],
   "redirects": [
@@ -110,8 +96,5 @@
     }
   ],
   "trailingSlash": false,
-  "cleanUrls": true,
-  "github": {
-    "enabled": false
-  }
+  "cleanUrls": true
 }
