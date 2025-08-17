@@ -7,7 +7,7 @@ export async function GET() {
     const robotsTxt = `# Robots.txt for EChart Trading Platform
 # Generated on ${new Date().toISOString()}
 
-# Allow all crawlers to access the site
+# Allow all crawlers
 User-agent: *
 Allow: /
 
@@ -18,7 +18,7 @@ Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
-Crawl-delay: 2
+Crawl-delay: 1
 
 User-agent: Slurp
 Allow: /
@@ -27,55 +27,58 @@ Crawl-delay: 2
 # Block access to sensitive areas
 Disallow: /api/
 Disallow: /admin/
-Disallow: /dashboard/
-Disallow: /portfolio/
-Disallow: /account/
-Disallow: /settings/
-Disallow: /auth/
-Disallow: /login/
-Disallow: /register/
-Disallow: /profile/
 Disallow: /private/
 Disallow: /_next/
-Disallow: /static/
-Disallow: /.well-known/
-Disallow: /tmp/
-Disallow: /logs/
-Disallow: /backup/
+Disallow: /dashboard/private/
+Disallow: /user/
+Disallow: /account/
+Disallow: /settings/private/
 
-# Block access to file types that shouldn't be indexed
+# Block access to temporary and cache files
+Disallow: /tmp/
+Disallow: /cache/
 Disallow: /*.json$
 Disallow: /*.xml$
-Disallow: /*.txt$
 Disallow: /*.log$
-Disallow: /*.env$
-Disallow: /*.config$
 
-# Block access to development and testing paths
+# Block access to development and testing files
 Disallow: /test/
 Disallow: /dev/
-Disallow: /staging/
-Disallow: /beta/
-Disallow: /__tests__/
-Disallow: /coverage/
+Disallow: /.env
+Disallow: /package.json
+Disallow: /package-lock.json
+Disallow: /yarn.lock
+Disallow: /pnpm-lock.yaml
 
-# Block access to user-generated content that might be sensitive
-Disallow: /uploads/private/
-Disallow: /documents/private/
-Disallow: /reports/private/
+# Block access to version control
+Disallow: /.git/
+Disallow: /.github/
+Disallow: /.gitignore
 
-# Allow access to public content
-Allow: /news/
-Allow: /insights/
-Allow: /learn/
-Allow: /market-updates/
-Allow: /stock/
-Allow: /sector/
-Allow: /index/
-Allow: /about/
-Allow: /contact/
-Allow: /privacy/
-Allow: /terms/
+# Block access to configuration files
+Disallow: /next.config.js
+Disallow: /next.config.mjs
+Disallow: /tailwind.config.js
+Disallow: /postcss.config.js
+Disallow: /tsconfig.json
+
+# Allow access to important pages
+Allow: /markets
+Allow: /stocks
+Allow: /indices
+Allow: /sectors
+Allow: /news
+Allow: /analysis
+Allow: /learn
+Allow: /help
+Allow: /about
+Allow: /contact
+
+# Allow access to static assets
+Allow: /images/
+Allow: /icons/
+Allow: /favicon.ico
+Allow: /manifest.json
 
 # Block aggressive crawlers and scrapers
 User-agent: AhrefsBot
@@ -90,27 +93,24 @@ Disallow: /
 User-agent: SemrushBot
 Disallow: /
 
-User-agent: MegaIndex
-Disallow: /
-
 User-agent: BLEXBot
 Disallow: /
 
-# Block AI training crawlers (optional - uncomment if desired)
-# User-agent: GPTBot
-# Disallow: /
+# Block AI training crawlers (optional)
+User-agent: GPTBot
+Disallow: /
 
-# User-agent: ChatGPT-User
-# Disallow: /
+User-agent: ChatGPT-User
+Disallow: /
 
-# User-agent: CCBot
-# Disallow: /
+User-agent: CCBot
+Disallow: /
 
-# User-agent: anthropic-ai
-# Disallow: /
+User-agent: anthropic-ai
+Disallow: /
 
-# User-agent: Claude-Web
-# Disallow: /
+User-agent: Claude-Web
+Disallow: /
 
 # Block social media crawlers from sensitive content
 User-agent: facebookexternalhit
@@ -123,58 +123,60 @@ Disallow: /dashboard/
 Disallow: /portfolio/
 Disallow: /account/
 
-User-agent: LinkedInBot
-Disallow: /dashboard/
-Disallow: /portfolio/
-Disallow: /account/
-
-# Crawl delay for general bots to prevent server overload
-User-agent: *
+# Crawl delay for all bots
 Crawl-delay: 1
 
 # Sitemap location
 Sitemap: ${baseUrl}/sitemap.xml
-Sitemap: ${baseUrl}/api/sitemap
 
 # Additional sitemaps (if you have them)
-# Sitemap: ${baseUrl}/sitemap-news.xml
 # Sitemap: ${baseUrl}/sitemap-stocks.xml
-# Sitemap: ${baseUrl}/sitemap-sectors.xml
+# Sitemap: ${baseUrl}/sitemap-news.xml
+# Sitemap: ${baseUrl}/sitemap-analysis.xml
 
 # Host directive (helps with canonicalization)
 Host: ${baseUrl}
 
-# Clean URLs preference
-# This helps search engines understand your preferred URL structure
-# Example: prefer www or non-www version
+# Request rate (requests per second)
+Request-rate: 1/1
+
+# Visit time (time to wait between requests in seconds)
+Visit-time: 0100-2300
+
+# Clean-param (remove tracking parameters)
+Clean-param: utm_source
+Clean-param: utm_medium
+Clean-param: utm_campaign
+Clean-param: utm_term
+Clean-param: utm_content
+Clean-param: fbclid
+Clean-param: gclid
+
+# Comments for developers
+# This robots.txt file is optimized for a trading platform
+# It allows search engines to index public content while protecting
+# sensitive user data and private areas
+# 
+# For questions about this file, contact: admin@echart.in
+# Last updated: ${new Date().toISOString().split("T")[0]}
 `
 
     return new NextResponse(robotsTxt, {
       status: 200,
       headers: {
         "Content-Type": "text/plain",
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        "Cache-Control": "public, max-age=86400, s-maxage=86400",
+        "CDN-Cache-Control": "public, max-age=86400",
+        "Vercel-CDN-Cache-Control": "public, max-age=86400",
       },
     })
   } catch (error) {
-    console.error("Error generating robots.txt:", error)
+    console.error("Robots.txt generation error:", error)
 
-    // Return a basic robots.txt in case of error
-    const fallbackRobots = `User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /admin/
-Disallow: /dashboard/
-Disallow: /portfolio/
-Disallow: /account/
-
-Sitemap: ${process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"}/sitemap.xml`
-
-    return new NextResponse(fallbackRobots, {
-      status: 200,
+    return new NextResponse("# Error generating robots.txt", {
+      status: 500,
       headers: {
         "Content-Type": "text/plain",
-        "Cache-Control": "public, max-age=3600",
       },
     })
   }

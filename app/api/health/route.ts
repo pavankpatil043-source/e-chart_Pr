@@ -1,15 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 interface HealthStatus {
-  status: "healthy" | "unhealthy" | "degraded"
+  status: "healthy" | "unhealthy"
   timestamp: string
   uptime: number
-  version: string
   environment: string
+  version: string
   services: {
-    database: "connected" | "disconnected" | "unknown"
-    redis: "connected" | "disconnected" | "unknown"
-    external_apis: "available" | "unavailable" | "unknown"
+    database: "connected" | "disconnected" | "not_configured"
+    redis: "connected" | "disconnected" | "not_configured"
+    external_apis: "operational" | "degraded" | "down"
   }
   system: {
     memory: {
@@ -26,93 +26,76 @@ interface HealthStatus {
       percentage: number
     }
   }
-  metrics: {
+  performance: {
+    response_time: number
     requests_per_minute: number
-    average_response_time: number
     error_rate: number
   }
 }
 
-// Simple in-memory metrics store
+// Simple in-memory metrics (in production, use Redis or database)
 let requestCount = 0
-let totalResponseTime = 0
 let errorCount = 0
-let lastResetTime = Date.now()
+const startTime = Date.now()
 
 export async function GET(request: NextRequest) {
-  const startTime = Date.now()
+  const start = Date.now()
+  requestCount++
 
   try {
-    // Update request metrics
-    requestCount++
-
-    // Reset metrics every minute
-    const now = Date.now()
-    if (now - lastResetTime > 60000) {
-      requestCount = 1
-      totalResponseTime = 0
-      errorCount = 0
-      lastResetTime = now
-    }
-
     // Get system information
     const memoryUsage = process.memoryUsage()
-    const cpuUsage = process.cpuUsage()
+    const uptime = process.uptime()
 
     // Check external services
-    const services = await checkServices()
+    const servicesStatus = await checkServices()
 
-    // Calculate metrics
-    const responseTime = Date.now() - startTime
-    totalResponseTime += responseTime
-    const averageResponseTime = requestCount > 0 ? totalResponseTime / requestCount : 0
+    // Calculate performance metrics
+    const responseTime = Date.now() - start
+    const requestsPerMinute = Math.round((requestCount / (uptime / 60)) * 100) / 100
     const errorRate = requestCount > 0 ? (errorCount / requestCount) * 100 : 0
 
-    // Determine overall health status
-    let status: "healthy" | "unhealthy" | "degraded" = "healthy"
-
-    if (services.database === "disconnected" || services.external_apis === "unavailable") {
-      status = "degraded"
-    }
-
-    if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.9 || errorRate > 10) {
-      status = "unhealthy"
-    }
-
     const healthStatus: HealthStatus = {
-      status,
+      status: "healthy",
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: process.env.npm_package_version || "1.0.0",
+      uptime: Math.round(uptime),
       environment: process.env.NODE_ENV || "development",
-      services,
+      version: process.env.npm_package_version || "1.0.0",
+      services: servicesStatus,
       system: {
         memory: {
-          used: memoryUsage.heapUsed,
-          total: memoryUsage.heapTotal,
-          percentage: (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100,
+          used: Math.round(memoryUsage.heapUsed / 1024 / 1024), // MB
+          total: Math.round(memoryUsage.heapTotal / 1024 / 1024), // MB
+          percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
         },
         cpu: {
-          usage: (cpuUsage.user + cpuUsage.system) / 1000000, // Convert to milliseconds
+          usage: await getCPUUsage(),
         },
         disk: {
-          used: 0, // Would need additional library to get disk usage
+          used: 0, // Would need fs.statSync in real implementation
           total: 0,
           percentage: 0,
         },
       },
-      metrics: {
-        requests_per_minute: requestCount,
-        average_response_time: averageResponseTime,
-        error_rate: errorRate,
+      performance: {
+        response_time: responseTime,
+        requests_per_minute: requestsPerMinute,
+        error_rate: Math.round(errorRate * 100) / 100,
       },
     }
 
-    // Return appropriate HTTP status based on health
-    const httpStatus = status === "healthy" ? 200 : status === "degraded" ? 207 : 503
+    // Determine overall health status
+    if (
+      servicesStatus.external_apis === "down" ||
+      healthStatus.system.memory.percentage > 90 ||
+      healthStatus.system.cpu.usage > 90 ||
+      errorRate > 10
+    ) {
+      healthStatus.status = "unhealthy"
+    }
 
     return NextResponse.json(healthStatus, {
-      status: httpStatus,
+      status: healthStatus.status === "healthy" ? 200 : 503,
       headers: {
         "Cache-Control": "no-cache, no-store, must-revalidate",
         Pragma: "no-cache",
@@ -121,72 +104,78 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     errorCount++
+    console.error("Health check error:", error)
 
-    const errorStatus: Partial<HealthStatus> = {
-      status: "unhealthy",
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || "development",
-    }
-
-    return NextResponse.json(errorStatus, {
-      status: 503,
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
+    return NextResponse.json(
+      {
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        error: "Health check failed",
+        uptime: process.uptime(),
       },
-    })
+      { status: 503 },
+    )
   }
 }
 
 async function checkServices() {
   const services = {
-    database: "unknown" as "connected" | "disconnected" | "unknown",
-    redis: "unknown" as "connected" | "disconnected" | "unknown",
-    external_apis: "unknown" as "available" | "unavailable" | "unknown",
+    database: "not_configured" as const,
+    redis: "not_configured" as const,
+    external_apis: "operational" as const,
   }
 
   // Check database connection
-  try {
-    if (process.env.DATABASE_URL) {
-      // Would implement actual database check here
+  if (process.env.DATABASE_URL) {
+    try {
+      // In a real app, you'd check actual database connection
       services.database = "connected"
-    } else {
-      services.database = "unknown"
+    } catch {
+      services.database = "disconnected"
     }
-  } catch {
-    services.database = "disconnected"
   }
 
   // Check Redis connection
-  try {
-    if (process.env.REDIS_URL) {
-      // Would implement actual Redis check here
+  if (process.env.REDIS_URL) {
+    try {
+      // In a real app, you'd check actual Redis connection
       services.redis = "connected"
-    } else {
-      services.redis = "unknown"
+    } catch {
+      services.redis = "disconnected"
     }
-  } catch {
-    services.redis = "disconnected"
   }
 
   // Check external APIs
   try {
-    const response = await fetch("https://api.github.com/zen", {
-      method: "GET",
-      timeout: 5000,
-    } as any)
+    // Test a simple external API call
+    const response = await fetch("https://httpstat.us/200", {
+      method: "HEAD",
+      signal: AbortSignal.timeout(5000),
+    })
 
-    if (response.ok) {
-      services.external_apis = "available"
-    } else {
-      services.external_apis = "unavailable"
+    if (!response.ok) {
+      services.external_apis = "degraded"
     }
   } catch {
-    services.external_apis = "unavailable"
+    services.external_apis = "down"
   }
 
   return services
+}
+
+async function getCPUUsage(): Promise<number> {
+  // Simple CPU usage calculation
+  // In production, you might want to use a more sophisticated method
+  const startUsage = process.cpuUsage()
+
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const endUsage = process.cpuUsage(startUsage)
+      const totalUsage = endUsage.user + endUsage.system
+      const percentage = (totalUsage / 1000000) * 100 // Convert to percentage
+      resolve(Math.min(Math.round(percentage * 100) / 100, 100))
+    }, 100)
+  })
 }
 
 // Handle other HTTP methods

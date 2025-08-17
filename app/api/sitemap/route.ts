@@ -12,42 +12,14 @@ export async function GET() {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://echart.in"
     const currentDate = new Date().toISOString().split("T")[0]
 
-    // Static pages
-    const staticPages: SitemapUrl[] = [
+    // Define all pages and their properties
+    const urls: SitemapUrl[] = [
       {
-        loc: `${baseUrl}`,
+        loc: `${baseUrl}/`,
         lastmod: currentDate,
         changefreq: "daily",
         priority: 1.0,
       },
-      {
-        loc: `${baseUrl}/about`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.8,
-      },
-      {
-        loc: `${baseUrl}/contact`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.7,
-      },
-      {
-        loc: `${baseUrl}/privacy`,
-        lastmod: currentDate,
-        changefreq: "yearly",
-        priority: 0.5,
-      },
-      {
-        loc: `${baseUrl}/terms`,
-        lastmod: currentDate,
-        changefreq: "yearly",
-        priority: 0.5,
-      },
-    ]
-
-    // Trading related pages
-    const tradingPages: SitemapUrl[] = [
       {
         loc: `${baseUrl}/dashboard`,
         lastmod: currentDate,
@@ -67,20 +39,56 @@ export async function GET() {
         priority: 0.8,
       },
       {
-        loc: `${baseUrl}/watchlist`,
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.8,
-      },
-      {
         loc: `${baseUrl}/analysis`,
         lastmod: currentDate,
         changefreq: "daily",
         priority: 0.8,
       },
+      {
+        loc: `${baseUrl}/news`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.7,
+      },
+      {
+        loc: `${baseUrl}/chat`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
+      },
+      {
+        loc: `${baseUrl}/settings`,
+        lastmod: currentDate,
+        changefreq: "weekly",
+        priority: 0.5,
+      },
+      {
+        loc: `${baseUrl}/help`,
+        lastmod: currentDate,
+        changefreq: "monthly",
+        priority: 0.4,
+      },
+      {
+        loc: `${baseUrl}/about`,
+        lastmod: currentDate,
+        changefreq: "monthly",
+        priority: 0.3,
+      },
+      {
+        loc: `${baseUrl}/privacy`,
+        lastmod: currentDate,
+        changefreq: "yearly",
+        priority: 0.2,
+      },
+      {
+        loc: `${baseUrl}/terms`,
+        lastmod: currentDate,
+        changefreq: "yearly",
+        priority: 0.2,
+      },
     ]
 
-    // Stock symbols (popular Indian stocks)
+    // Add popular Indian stocks
     const popularStocks = [
       "RELIANCE",
       "TCS",
@@ -104,14 +112,16 @@ export async function GET() {
       "POWERGRID",
     ]
 
-    const stockPages: SitemapUrl[] = popularStocks.map((symbol) => ({
-      loc: `${baseUrl}/stock/${symbol}`,
-      lastmod: currentDate,
-      changefreq: "hourly",
-      priority: 0.7,
-    }))
+    popularStocks.forEach((stock) => {
+      urls.push({
+        loc: `${baseUrl}/stock/${stock}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.7,
+      })
+    })
 
-    // Sector pages
+    // Add market sectors
     const sectors = [
       "banking",
       "it",
@@ -127,14 +137,16 @@ export async function GET() {
       "textiles",
     ]
 
-    const sectorPages: SitemapUrl[] = sectors.map((sector) => ({
-      loc: `${baseUrl}/sector/${sector}`,
-      lastmod: currentDate,
-      changefreq: "daily",
-      priority: 0.6,
-    }))
+    sectors.forEach((sector) => {
+      urls.push({
+        loc: `${baseUrl}/sector/${sector}`,
+        lastmod: currentDate,
+        changefreq: "daily",
+        priority: 0.6,
+      })
+    })
 
-    // Index pages
+    // Add Indian market indices
     const indices = [
       "nifty50",
       "sensex",
@@ -148,84 +160,45 @@ export async function GET() {
       "niftyrealty",
     ]
 
-    const indexPages: SitemapUrl[] = indices.map((index) => ({
-      loc: `${baseUrl}/index/${index}`,
-      lastmod: currentDate,
-      changefreq: "hourly",
-      priority: 0.8,
-    }))
+    indices.forEach((index) => {
+      urls.push({
+        loc: `${baseUrl}/index/${index}`,
+        lastmod: currentDate,
+        changefreq: "hourly",
+        priority: 0.8,
+      })
+    })
 
-    // Educational content
-    const educationalPages: SitemapUrl[] = [
-      {
-        loc: `${baseUrl}/learn`,
+    // Add educational content
+    const educationalPages = [
+      "trading-basics",
+      "technical-analysis",
+      "fundamental-analysis",
+      "risk-management",
+      "portfolio-management",
+      "market-psychology",
+      "options-trading",
+      "derivatives",
+      "mutual-funds",
+      "ipo-guide",
+    ]
+
+    educationalPages.forEach((page) => {
+      urls.push({
+        loc: `${baseUrl}/learn/${page}`,
         lastmod: currentDate,
         changefreq: "weekly",
-        priority: 0.7,
-      },
-      {
-        loc: `${baseUrl}/learn/basics`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.6,
-      },
-      {
-        loc: `${baseUrl}/learn/technical-analysis`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.6,
-      },
-      {
-        loc: `${baseUrl}/learn/fundamental-analysis`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.6,
-      },
-      {
-        loc: `${baseUrl}/learn/risk-management`,
-        lastmod: currentDate,
-        changefreq: "monthly",
-        priority: 0.6,
-      },
-    ]
-
-    // News and insights
-    const newsPages: SitemapUrl[] = [
-      {
-        loc: `${baseUrl}/news`,
-        lastmod: currentDate,
-        changefreq: "hourly",
-        priority: 0.8,
-      },
-      {
-        loc: `${baseUrl}/insights`,
-        lastmod: currentDate,
-        changefreq: "daily",
-        priority: 0.7,
-      },
-      {
-        loc: `${baseUrl}/market-updates`,
-        lastmod: currentDate,
-        changefreq: "hourly",
-        priority: 0.8,
-      },
-    ]
-
-    // Combine all URLs
-    const allUrls = [
-      ...staticPages,
-      ...tradingPages,
-      ...stockPages,
-      ...sectorPages,
-      ...indexPages,
-      ...educationalPages,
-      ...newsPages,
-    ]
+        priority: 0.5,
+      })
+    })
 
     // Generate XML sitemap
     const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${allUrls
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+${urls
   .map(
     (url) => `  <url>
     <loc>${url.loc}</loc>
@@ -241,7 +214,9 @@ ${allUrls
       status: 200,
       headers: {
         "Content-Type": "application/xml",
-        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+        "Cache-Control": "public, max-age=3600, s-maxage=3600",
+        "CDN-Cache-Control": "public, max-age=3600",
+        "Vercel-CDN-Cache-Control": "public, max-age=3600",
       },
     })
   } catch (error) {

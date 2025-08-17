@@ -4,24 +4,32 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   generateEtags: false,
-  reactStrictMode: true,
-  serverExternalPackages: ['sharp'],
-  experimental: {
-    optimizeCss: true,
-  },
   images: {
     domains: ['echart.in', 'localhost'],
     formats: ['image/webp', 'image/avif'],
-    minimumCacheTTL: 60,
-    dangerouslyAllowSVG: true,
-    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'echart.in',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'blob.v0.dev',
+        port: '',
+        pathname: '/**',
+      },
+    ],
+    unoptimized: true, // Added from updates
   },
-  eslint: {
-    ignoreDuringBuilds: true,
+  serverExternalPackages: ['sharp'],
+  experimental: {
+    optimizeCss: true,
+    serverComponentsExternalPackages: undefined,
   },
-  typescript: {
-    ignoreBuildErrors: true,
+  env: {
+    CUSTOM_KEY: process.env.CUSTOM_KEY,
   },
   async headers() {
     return [
@@ -29,38 +37,52 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           {
-            key: 'X-DNS-Prefetch-Control',
-            value: 'on'
+            key: 'X-Frame-Options',
+            value: 'DENY',
           },
           {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin',
           },
           {
             key: 'X-XSS-Protection',
-            value: '1; mode=block'
-          }
-        ]
+            value: '1; mode=block',
+          },
+        ],
       },
-      {
-        source: '/api/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=300, stale-while-revalidate=60'
-          }
-        ]
-      }
     ]
   },
   async rewrites() {
     return [
       {
-        source: '/api/proxy/:path*',
-        destination: 'https://query1.finance.yahoo.com/:path*'
-      }
+        source: '/sitemap.xml',
+        destination: '/api/sitemap',
+      },
+      {
+        source: '/robots.txt',
+        destination: '/api/robots',
+      },
     ]
-  }
+  },
+  async redirects() {
+    return [
+      {
+        source: '/home',
+        destination: '/',
+        permanent: true,
+      },
+    ]
+  },
+  eslint: {
+    ignoreDuringBuilds: true, // Added from updates
+  },
+  typescript: {
+    ignoreBuildErrors: true, // Added from updates
+  },
 }
 
 export default nextConfig
