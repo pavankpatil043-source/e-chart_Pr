@@ -1,0 +1,64 @@
+# 🚀 Quick Vercel Deployment Commands
+# Copy and paste these commands one by one into PowerShell
+
+# Step 1: Install Vercel CLI (if not already installed)
+npm install -g vercel
+
+# Step 2: Navigate to your project
+cd "c:\Users\shant\Downloads\e-chart_Pr-Main\e-chart_Pr-Main"
+
+# Step 3: Login to Vercel (will open browser)
+vercel login
+
+# Step 4: Deploy to production
+vercel --prod
+
+# Step 5: After deployment, set environment variables in Vercel Dashboard:
+# Go to: https://vercel.com/dashboard
+# Select your project → Settings → Environment Variables
+# Add these (Production environment):
+#
+# NODE_ENV=production
+# NEXT_PUBLIC_APP_URL=https://echart.in
+# NEXT_PUBLIC_DOMAIN=echart.in
+# HUGGING_FACE_API_KEY=your_hugging_face_api_key_here
+#
+# Optional:
+# BREEZE_API_KEY=your_breeze_api_key_here
+# BREEZE_API_SECRET=your_breeze_api_secret_here
+# BREEZE_BASE_URL=https://api.icicidirect.com/breezeapi/api/v1
+
+# Step 6: Redeploy after adding environment variables
+vercel --prod
+
+# Step 7: Add custom domain in Vercel Dashboard:
+# Go to Settings → Domains → Add Domain
+# Enter: echart.in
+# Follow DNS configuration instructions
+
+# Step 8: Update DNS at your domain registrar:
+# Add A record:
+#   Type: A
+#   Name: @
+#   Value: 76.76.21.21
+#   TTL: 300
+#
+# Add A record for www:
+#   Type: A
+#   Name: www
+#   Value: 76.76.21.21
+#   TTL: 300
+
+# Step 9: Wait 5-60 minutes for DNS propagation
+# Check status at: https://dnschecker.org
+
+# Step 10: Visit your site!
+# https://echart.in
+
+# ✅ Done! Your app is live on echart.in
+
+# Useful commands:
+# - Check deployment status: vercel ls
+# - View logs: vercel logs
+# - Remove deployment: vercel rm <deployment-url>
+# - List projects: vercel projects ls
