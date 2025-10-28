@@ -24,6 +24,15 @@ interface MarketIndex {
   source: string
 }
 
+interface GiftNiftyData {
+  price: number
+  change: number
+  pChange: number
+  isPositive: boolean
+  lastUpdate: number
+  source: string
+}
+
 interface SelectedStock {
   symbol: string
   name: string
@@ -32,6 +41,7 @@ interface SelectedStock {
 
 export default function TradingDashboard() {
   const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([])
+  const [giftNifty, setGiftNifty] = useState<GiftNiftyData | null>(null)
   const [indicesLoading, setIndicesLoading] = useState(false)
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
   const [isClient, setIsClient] = useState(false)
@@ -65,15 +75,29 @@ export default function TradingDashboard() {
 
     try {
       setIndicesLoading(true)
-      const response = await fetch("/api/indian-indices", {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      })
-      const data = await response.json()
+      
+      // Fetch both market indices and Gift Nifty in parallel
+      const [indicesResponse, giftNiftyResponse] = await Promise.all([
+        fetch("/api/indian-indices", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        }),
+        fetch("/api/gift-nifty", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        })
+      ])
+      
+      const indicesData = await indicesResponse.json()
+      const giftNiftyData = await giftNiftyResponse.json()
 
-      if (data.success && isComponentMountedRef.current && Array.isArray(data.indices)) {
-        setMarketIndices(data.indices)
+      if (indicesData.success && isComponentMountedRef.current && Array.isArray(indicesData.indices)) {
+        setMarketIndices(indicesData.indices)
         setLastUpdateTime(new Date())
+      }
+      
+      if (giftNiftyData.success && isComponentMountedRef.current && giftNiftyData.data) {
+        setGiftNifty(giftNiftyData.data)
       }
     } catch (error) {
       console.error("Error fetching market indices:", error)
@@ -161,8 +185,32 @@ export default function TradingDashboard() {
             <span className="text-xl font-bold text-white tracking-tight">ECHART</span>
           </div>
 
-          {/* Live Market Indices - Clean Cards */}
+          {/* Market Data Container - Gift Nifty First, then Indices */}
           <div className="flex items-center gap-3">
+            {/* Gift Nifty - Pre-Market Indicator (First Position) */}
+            {giftNifty && (
+              <div className="group">
+                <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 to-orange-500/10 px-4 py-2.5 backdrop-blur-sm transition-all hover:border-amber-400/50 hover:from-amber-500/20 hover:to-orange-500/20 shadow-lg shadow-amber-500/10">
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                      Gift Nifty
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-sm font-bold text-white tabular-nums">
+                        {giftNifty.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                      </span>
+                      <span className={`flex items-center gap-0.5 text-xs font-semibold tabular-nums ${giftNifty.isPositive ? "text-emerald-400" : "text-red-400"}`}>
+                        {giftNifty.isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                        {giftNifty.isPositive ? "+" : "-"}{Math.abs(giftNifty.change).toFixed(2)} ({Math.abs(giftNifty.pChange).toFixed(2)}%)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Live Market Indices - Clean Cards */}
             {marketIndices.slice(0, 4).map((index, i) => (
               <div key={`${index.symbol}-${i}`} className="group">
                 <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 backdrop-blur-sm transition-all hover:border-white/20 hover:bg-white/10">
