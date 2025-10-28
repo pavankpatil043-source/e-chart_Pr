@@ -81,6 +81,23 @@ function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
 function categorizeNews(title: string, description: string): string {
   const text = `${title} ${description}`.toLowerCase()
 
+  // Economy-specific keywords (check first for priority)
+  if (
+    text.includes("gdp") || 
+    text.includes("inflation") || 
+    text.includes("fiscal") || 
+    text.includes("monetary") ||
+    text.includes("economy") ||
+    text.includes("economic growth") ||
+    text.includes("budget") ||
+    text.includes("tax") ||
+    text.includes("deficit") ||
+    text.includes("trade deficit") ||
+    text.includes("export") ||
+    text.includes("import")
+  ) {
+    return "Economy"
+  }
   if (text.includes("bank") || text.includes("hdfc") || text.includes("icici") || text.includes("sbi")) {
     return "Banking"
   }
@@ -112,7 +129,8 @@ function categorizeNews(title: string, description: string): string {
 async function fetchIndianBusinessNews(): Promise<NewsArticle[]> {
   try {
     // Using Google News RSS (works reliably without API keys)
-    const query = "India business stock market"
+    // Simple broad query that includes business, economy, and finance news
+    const query = "India business"
     
     const response = await fetch(
       `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`,

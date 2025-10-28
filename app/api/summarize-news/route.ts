@@ -181,6 +181,8 @@ async function generateSummary(title: string, description: string, url: string):
       return words.join(' ') + (description.split(/\s+/).length > 30 ? '...' : '.')
     }
 
+    console.log("✅ Hugging Face API key detected, attempting AI summarization...")
+
     // Use Hugging Face summarization with strict 30-word limit
     try {
       const result = await Promise.race([
@@ -193,7 +195,7 @@ async function generateSummary(title: string, description: string, url: string):
           },
         }),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("HF API timeout")), 10000)
+          setTimeout(() => reject(new Error("HF API timeout")), 30000) // Increased from 10s to 30s
         )
       ]) as any
 
