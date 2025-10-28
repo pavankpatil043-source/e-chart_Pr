@@ -74,7 +74,7 @@ async function fetchCandleData(symbol: string, days: number = 30): Promise<Candl
     const apiUrl = `${baseUrl}/api/yahoo-chart`
     const response = await fetch(
       `${apiUrl}?symbol=${nsSymbol}&interval=${interval}&range=${range}`,
-      { signal: AbortSignal.timeout(15000) }
+      { signal: AbortSignal.timeout(25000) }
     )
     
     if (!response.ok) throw new Error(`Failed to fetch chart data: ${response.status}`)

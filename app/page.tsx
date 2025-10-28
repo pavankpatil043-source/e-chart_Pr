@@ -174,7 +174,7 @@ export default function TradingDashboard() {
                       </span>
                       <span className={`flex items-center gap-0.5 text-xs font-semibold tabular-nums ${index.isPositive ? "text-emerald-400" : "text-red-400"}`}>
                         {index.isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                        {Math.abs(index.pChange).toFixed(2)}%
+                        {index.isPositive ? "+" : "-"}{Math.abs(index.change).toFixed(2)} ({Math.abs(index.pChange).toFixed(2)}%)
                       </span>
                     </div>
                   </div>
