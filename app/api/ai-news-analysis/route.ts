@@ -31,16 +31,18 @@ const analysisCache = new Map<string, { data: NewsAnalysisResult; timestamp: num
 const CACHE_DURATION = 3600000 // 1 hour cache for news analysis
 
 // Fetch news from multiple sources
-async function fetchNewsForStock(symbol: string, days: number = 7): Promise<NewsItem[]> {
+async function fetchNewsForStock(symbol: string, days: number = 7, requestUrl: string): Promise<NewsItem[]> {
   const baseSymbol = symbol.replace('.NS', '')
   const endDate = new Date()
   const startDate = new Date()
   startDate.setDate(startDate.getDate() - days)
   
   try {
-    // Use full URL for server-side fetch (relative URLs don't work in Next.js API routes)
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const apiUrl = `${baseUrl}/api/yahoo-news`
+    // Extract origin from the request URL instead of hardcoding
+    // This ensures it works on any port (3000, 3002) and in production
+    const url = new URL(requestUrl)
+    const origin = url.origin
+    const apiUrl = `${origin}/api/yahoo-news`
     
     const response = await fetch(
       `${apiUrl}?symbol=${baseSymbol}`,
@@ -315,8 +317,8 @@ export async function GET(request: NextRequest) {
     
     console.log(`🤖 Starting AI news analysis for ${symbol}...`)
     
-    // Fetch news
-    const newsItems = await fetchNewsForStock(symbol, days)
+    // Fetch news - pass request URL for dynamic origin detection
+    const newsItems = await fetchNewsForStock(symbol, days, request.url)
     
     if (newsItems.length === 0) {
       const fallbackResult: NewsAnalysisResult = {

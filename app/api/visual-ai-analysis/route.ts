@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Market Condition: ${marketCondition.state} | Trend: ${marketCondition.trend} | Volatility: ${marketCondition.volatility}`)
 
     // STEP 2: Fetch news sentiment for the stock (if available)
-    const newsSentiment = await fetchNewsSentiment(data.symbol)
+    const newsSentiment = await fetchNewsSentiment(data.symbol, request.url)
     console.log(`📰 News Sentiment: ${newsSentiment.sentiment} (${newsSentiment.articlesCount} articles)`)
 
     // STEP 3: AI decides which indicators to use based on market condition
@@ -189,11 +189,13 @@ function analyzeMarketCondition(data: ChartAnalysisRequest): MarketCondition {
 }
 
 // ===== NEWS SENTIMENT FETCHER =====
-async function fetchNewsSentiment(symbol: string): Promise<NewsSentiment> {
+async function fetchNewsSentiment(symbol: string, requestUrl: string): Promise<NewsSentiment> {
   try {
-    // Try to fetch news from existing news API
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const response = await fetch(`${baseUrl}/api/ai-news-analysis?symbol=${symbol}`, {
+    // Extract origin from the request URL instead of hardcoding
+    // This ensures it works on any port (3000, 3002) and in production
+    const url = new URL(requestUrl)
+    const origin = url.origin
+    const response = await fetch(`${origin}/api/ai-news-analysis?symbol=${symbol}`, {
       signal: AbortSignal.timeout(5000)
     })
     
