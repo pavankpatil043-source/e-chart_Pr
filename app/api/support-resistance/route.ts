@@ -50,7 +50,7 @@ interface SupportResistanceResult {
 const srCache = new Map<string, { data: SupportResistanceResult; timestamp: number }>()
 const CACHE_DURATION = 300000 // 5 minutes
 
-async function fetchCandleData(symbol: string, timeframe: string): Promise<CandleData[]> {
+async function fetchCandleData(symbol: string, timeframe: string, requestUrl: string): Promise<CandleData[]> {
   try {
     const nsSymbol = symbol.endsWith('.NS') ? symbol : `${symbol}.NS`
     
@@ -86,12 +86,21 @@ async function fetchCandleData(symbol: string, timeframe: string): Promise<Candl
         break
     }
     
-    // Use full URL for server-side fetch (relative URLs don't work in Next.js API routes)
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const apiUrl = `${baseUrl}/api/yahoo-chart`
+    // Extract origin from the request URL to call the correct host/port
+    const url = new URL(requestUrl)
+    const origin = url.origin
+    const apiUrl = `${origin}/api/yahoo-chart`
+    
+    console.log(`📊 Fetching chart data from: ${apiUrl}`)
+    
     const response = await fetch(
       `${apiUrl}?symbol=${nsSymbol}&interval=${interval}&range=${range}`,
-      { signal: AbortSignal.timeout(25000) }
+      { 
+        signal: AbortSignal.timeout(25000),
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      }
     )
     
     if (!response.ok) throw new Error('Failed to fetch chart data')
@@ -373,7 +382,7 @@ export async function GET(request: NextRequest) {
     
     console.log(`📏 Calculating support/resistance for ${symbol} (${timeframe})...`)
     
-    const candles = await fetchCandleData(symbol, timeframe)
+    const candles = await fetchCandleData(symbol, timeframe, request.url)
     
     if (candles.length === 0) {
       throw new Error('No candle data available')

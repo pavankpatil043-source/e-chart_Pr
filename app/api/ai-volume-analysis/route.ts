@@ -50,7 +50,7 @@ const volumeCache = new Map<string, { data: VolumeAnalysisResult; timestamp: num
 const CACHE_DURATION = 300000 // 5 minutes
 
 // Fetch historical candle data
-async function fetchCandleData(symbol: string, days: number = 30): Promise<CandleData[]> {
+async function fetchCandleData(symbol: string, days: number = 30, requestUrl: string): Promise<CandleData[]> {
   try {
     const nsSymbol = symbol.endsWith('.NS') ? symbol : `${symbol}.NS`
     
@@ -70,8 +70,12 @@ async function fetchCandleData(symbol: string, days: number = 30): Promise<Candl
     }
     
     // Use full URL for server-side fetch (relative URLs don't work in Next.js API routes)
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const apiUrl = `${baseUrl}/api/yahoo-chart`
+    const url = new URL(requestUrl)
+    const origin = url.origin
+    const apiUrl = `${origin}/api/yahoo-chart`
+    
+    console.log(`📊 Volume Analysis: Fetching chart data from ${apiUrl}`)
+    
     const response = await fetch(
       `${apiUrl}?symbol=${nsSymbol}&interval=${interval}&range=${range}`,
       { signal: AbortSignal.timeout(25000) }
@@ -429,7 +433,7 @@ export async function GET(request: NextRequest) {
     console.log(`📊 Starting volume analysis for ${symbol} (${days} days)...`)
     
     // Fetch candle data
-    const candles = await fetchCandleData(symbol, days)
+    const candles = await fetchCandleData(symbol, days, request.url)
     
     if (candles.length === 0) {
       throw new Error('No candle data available for analysis')

@@ -81,6 +81,21 @@ function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
 function categorizeNews(title: string, description: string): string {
   const text = `${title} ${description}`.toLowerCase()
 
+  // FII/DII specific keywords (highest priority - check first)
+  if (
+    text.includes("fii") || 
+    text.includes("dii") || 
+    text.includes("foreign institutional") ||
+    text.includes("domestic institutional") ||
+    text.includes("foreign investor") ||
+    text.includes("foreign inflow") ||
+    text.includes("foreign outflow") ||
+    text.includes("institutional investor") ||
+    text.includes("fpi")
+  ) {
+    return "FII/DII"
+  }
+  
   // Economy-specific keywords (check first for priority)
   if (
     text.includes("gdp") || 

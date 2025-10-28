@@ -48,16 +48,20 @@ const patternCache = new Map<string, { data: PatternRecognitionResult; timestamp
 const CACHE_DURATION = 300000 // 5 minutes
 
 // Fetch candle data
-async function fetchCandleData(symbol: string, days: number = 60): Promise<CandleData[]> {
+async function fetchCandleData(symbol: string, days: number = 60, requestUrl: string): Promise<CandleData[]> {
   try {
     const nsSymbol = symbol.endsWith('.NS') ? symbol : `${symbol}.NS`
     
     let range = '3mo'
     let interval = '1d'
     
-    // Use full URL for server-side fetch (relative URLs don't work in Next.js API routes)
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
-    const apiUrl = `${baseUrl}/api/yahoo-chart`
+    // Extract origin from the request URL to call the correct host/port
+    const url = new URL(requestUrl)
+    const origin = url.origin
+    const apiUrl = `${origin}/api/yahoo-chart`
+    
+    console.log(`📊 Pattern Recognition: Fetching chart data from ${apiUrl}`)
+    
     const response = await fetch(
       `${apiUrl}?symbol=${nsSymbol}&interval=${interval}&range=${range}`,
       { signal: AbortSignal.timeout(25000) }
@@ -486,7 +490,7 @@ export async function GET(request: NextRequest) {
     
     console.log(`🔍 Detecting patterns for ${symbol}...`)
     
-    const candles = await fetchCandleData(symbol, 60)
+    const candles = await fetchCandleData(symbol, 60, request.url)
     
     if (candles.length === 0) {
       throw new Error('No candle data available')

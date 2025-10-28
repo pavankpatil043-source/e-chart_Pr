@@ -47,26 +47,39 @@ export function FIIDIIDataPanel() {
     { value: "6mo", label: "6 Months" },
   ]
 
-  // Fetch FII DII data from NSE scraper
+  // Fetch FII DII data from multiple sources
   const fetchFIIDIIData = async () => {
     setLoading(true)
     try {
-      console.log("🌐 Fetching live FII/DII data from NSE...")
+      console.log("🌐 Fetching live FII/DII data...")
       
-      // Try NSE scraper first (primary source)
-      const response = await fetch(`/api/nse-fiidii?period=${selectedPeriod}`)
-      const data = await response.json()
+      // Try MoneyControl first (most reliable for Indian market)
+      console.log("1️⃣ Trying MoneyControl...")
+      const mcResponse = await fetch(`/api/moneycontrol-fiidii?period=${selectedPeriod}`)
+      const mcData = await mcResponse.json()
       
-      if (data.success && data.data?.length > 0) {
-        setFiiDiiData(data.data)
+      if (mcData.success && mcData.data?.length > 0) {
+        setFiiDiiData(mcData.data)
         setLastUpdate(new Date())
-        console.log(`✅ FII/DII data loaded from NSE: ${data.metadata?.source}`)
-        console.log(`📊 ${data.data.length} records for period: ${selectedPeriod}`)
+        console.log(`✅ FII/DII data loaded from MoneyControl: ${mcData.data.length} records`)
+        return
+      }
+      
+      // Try NSE scraper second (backup source)
+      console.log("2️⃣ MoneyControl unavailable, trying NSE...")
+      const nseResponse = await fetch(`/api/nse-fiidii?period=${selectedPeriod}`)
+      const nseData = await nseResponse.json()
+      
+      if (nseData.success && nseData.data?.length > 0) {
+        setFiiDiiData(nseData.data)
+        setLastUpdate(new Date())
+        console.log(`✅ FII/DII data loaded from NSE: ${nseData.metadata?.source}`)
+        console.log(`📊 ${nseData.data.length} records for period: ${selectedPeriod}`)
         return
       }
       
       // Fallback to Breeze API
-      console.log("⚠️ NSE unavailable, trying Breeze API...")
+      console.log("3️⃣ NSE unavailable, trying Breeze API...")
       const breezeResponse = await fetch(`/api/live-fii-dii?period=${selectedPeriod}`)
       const breezeData = await breezeResponse.json()
       
@@ -77,14 +90,14 @@ export function FIIDIIDataPanel() {
         return
       }
       
-      throw new Error('Both NSE and Breeze APIs failed')
+      throw new Error('All sources (MoneyControl, NSE, Breeze) failed')
       
     } catch (error) {
       console.error("❌ Error fetching FII/DII data:", error)
       
       // Final fallback to original API
       try {
-        console.log("⚠️ Trying original fallback API...")
+        console.log("4️⃣ Trying final fallback API...")
         const fallbackResponse = await fetch(`/api/fii-dii-data?period=${selectedPeriod}`)
         const fallbackData = await fallbackResponse.json()
         

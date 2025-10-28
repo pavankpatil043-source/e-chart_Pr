@@ -2,11 +2,27 @@ import { NextRequest, NextResponse } from "next/server"
 import { HfInference } from "@huggingface/inference"
 
 // Initialize Hugging Face with API key from env
-const HF_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY || ""
+// Check multiple possible environment variable names
+const HF_API_KEY = 
+  process.env.HUGGINGFACE_API_KEY || 
+  process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY || 
+  process.env.FACE_API_KEY ||  // Vercel environment variable name
+  process.env.NEXT_PUBLIC_FACE_API_KEY ||
+  ""
+
 const hf = HF_API_KEY ? new HfInference(HF_API_KEY) : null
 
 // Check if HF is configured
 const isHFConfigured = !!HF_API_KEY && HF_API_KEY.length > 10
+
+// Log configuration status (without exposing the key)
+console.log(`🔑 Hugging Face API configured: ${isHFConfigured}`)
+if (isHFConfigured) {
+  console.log(`✅ API Key length: ${HF_API_KEY.length} chars (starts with: ${HF_API_KEY.substring(0, 6)}...)`)
+} else {
+  console.warn("⚠️ Hugging Face API key not found in environment variables")
+  console.warn("   Looking for: HUGGINGFACE_API_KEY, FACE_API_KEY, NEXT_PUBLIC_HUGGINGFACE_API_KEY, NEXT_PUBLIC_FACE_API_KEY")
+}
 
 // List of Indian stock symbols and company names for detection
 const INDIAN_STOCKS = [
