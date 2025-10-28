@@ -76,7 +76,7 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
   const [selectedSentiment, setSelectedSentiment] = useState("all")
   const [metadata, setMetadata] = useState<any>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [filterByStock, setFilterByStock] = useState(!!stockSymbol)
+  const [filterByStock, setFilterByStock] = useState(false)
   const [dateRange, setDateRange] = useState<{ from: string; to: string; days: number } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 

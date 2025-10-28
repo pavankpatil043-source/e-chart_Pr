@@ -53,9 +53,18 @@ const TIMEFRAMES = [
 interface RealLiveChartProps {
   onStockChange?: (stock: { symbol: string; name: string; sector: string }) => void
   onTimeframeChange?: (timeframe: string) => void
+  onDataUpdate?: (data: {
+    price: number
+    previousClose: number
+    change: number
+    changePercent: number
+    high: number
+    low: number
+    volume: number
+  }) => void
 }
 
-export default function RealLiveChart({ onStockChange, onTimeframeChange }: RealLiveChartProps = {}) {
+export default function RealLiveChart({ onStockChange, onTimeframeChange, onDataUpdate }: RealLiveChartProps = {}) {
   const [selectedStock, setSelectedStock] = useState(POPULAR_NIFTY_STOCKS[0])
   const [timeframe, setTimeframe] = useState("1mo")
   const [stockData, setStockData] = useState<StockData | null>(null)
@@ -95,7 +104,7 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange }: Real
           
           // Only update if we get real data, not simulation
           if (!data.source || !data.source.includes('Simulation')) {
-            setStockData({
+            const stockDataObj = {
               symbol: toBaseSymbol(symbol),
               price: data.price,
               change: data.change,
@@ -108,7 +117,22 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange }: Real
               companyName: stock?.name || data.companyName || toBaseSymbol(symbol),
               sector: stock?.sector || "Unknown",
               source: data.source || "Yahoo Finance"
-            })
+            }
+            
+            setStockData(stockDataObj)
+            
+            // Notify parent component with stock data for AI analysis
+            if (onDataUpdate) {
+              onDataUpdate({
+                price: stockDataObj.price,
+                previousClose: stockDataObj.previousClose,
+                change: stockDataObj.change,
+                changePercent: stockDataObj.changePercent,
+                high: stockDataObj.high,
+                low: stockDataObj.low,
+                volume: stockDataObj.volume
+              })
+            }
             
             setIsConnected(true)
             setLastUpdate(new Date())
@@ -951,23 +975,6 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange }: Real
         </Card>
       )}
 
-      {/* Info Card */}
-      <Card className="bg-blue-900/20 border-blue-500/30">
-        <CardContent className="p-4">
-          <div className="flex items-start space-x-3">
-            <Activity className="h-5 w-5 text-blue-400 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="text-white font-medium mb-1">Real-Time Stock Data</h4>
-              <p className="text-sm text-slate-300">
-                This chart displays <strong>real-time price data</strong> from Yahoo Finance API. 
-                Prices update automatically every 5 seconds. The candlestick chart shows OHLC (Open, High, Low, Close) data 
-                with volume bars below. Select any Nifty 50 stock from the dropdown to view its live chart. 
-                Data is fetched directly from Yahoo Finance - no simulated data.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

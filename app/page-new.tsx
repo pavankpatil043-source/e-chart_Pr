@@ -4,13 +4,12 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card } from "@/components/ui/card"
-import { RefreshCw, Activity, Newspaper, Bot, ArrowUpRight, ArrowDownRight, Brain, Sparkles, BarChart3 } from "lucide-react"
+import { RefreshCw, Activity, Newspaper, Bot, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import RealLiveChart from "@/components/real-live-chart"
 import { ChatPanel } from "@/components/chat-panel"
 import { EnhancedNewsPanel } from "@/components/enhanced-news-panel"
 import { FIIDIIDataPanel } from "@/components/fii-dii-data-panel"
 import { AIInsightsDashboard } from "@/components/ai-insights-dashboard"
-import { VisualAIChartAnalysis } from "@/components/visual-ai-chart-analysis"
 import { POPULAR_NIFTY_STOCKS } from "@/lib/nifty-50-stocks"
 
 interface MarketIndex {
@@ -38,16 +37,6 @@ export default function TradingDashboard() {
   
   const [selectedStock, setSelectedStock] = useState<SelectedStock>(POPULAR_NIFTY_STOCKS[0])
   const [selectedTimeframe, setSelectedTimeframe] = useState("1mo")
-  const [showAIAnalysis, setShowAIAnalysis] = useState(false)
-  const [currentStockData, setCurrentStockData] = useState({
-    price: 0,
-    previousClose: 0,
-    change: 0,
-    changePercent: 0,
-    high: 0,
-    low: 0,
-    volume: 0
-  })
 
   useEffect(() => {
     setIsClient(true)
@@ -192,22 +181,6 @@ export default function TradingDashboard() {
             >
               <RefreshCw className={`h-4 w-4 ${indicesLoading ? "animate-spin" : ""}`} />
             </Button>
-
-            {/* AI Chart Analysis Button - Right Corner with Blinking Highlight */}
-            <Button
-              onClick={() => setShowAIAnalysis(!showAIAnalysis)}
-              className="relative bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-lg shadow-purple-500/25 border border-purple-400/20 transition-all hover:shadow-purple-500/40 hover:scale-105 animate-pulse"
-            >
-              {/* Blinking glow ring */}
-              <span className="absolute -inset-1 bg-gradient-to-r from-purple-400 to-blue-400 rounded-lg blur opacity-75 animate-pulse"></span>
-              
-              {/* Button content */}
-              <span className="relative flex items-center">
-                <BarChart3 className="h-4 w-4 mr-2 animate-bounce" />
-                AI Visual Analysis
-                <Sparkles className="h-3 w-3 ml-2 animate-spin" />
-              </span>
-            </Button>
           </div>
         </div>
       </header>
@@ -216,40 +189,18 @@ export default function TradingDashboard() {
       <div className="flex gap-4 p-4 h-[calc(100vh-4.5rem)]">
         {/* Left: Charts & Analysis (68%) */}
         <div className="flex-1 space-y-4 overflow-y-auto">
-          {/* Main Chart - Primary Focus */}
-          <Card className="border-white/10 bg-[#131722]/50 backdrop-blur-sm p-5">
-            <RealLiveChart 
-              onStockChange={setSelectedStock}
-              onTimeframeChange={setSelectedTimeframe}
-              onDataUpdate={setCurrentStockData}
-            />
-          </Card>
-
           {/* FII/DII - Minimal Card */}
           <Card className="border-white/10 bg-[#131722]/50 backdrop-blur-sm p-5">
             <FIIDIIDataPanel />
           </Card>
 
-          {/* AI Chart Analysis Modal - Full Screen */}
-          {showAIAnalysis && currentStockData.price > 0 && (
-            <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm animate-in fade-in duration-300">
-              <div className="h-full w-full overflow-y-auto">
-                <div className="container mx-auto p-4 max-w-7xl">
-                  <VisualAIChartAnalysis
-                    symbol={selectedStock.symbol}
-                    currentPrice={currentStockData.price}
-                    previousClose={currentStockData.previousClose}
-                    change={currentStockData.change}
-                    changePercent={currentStockData.changePercent}
-                    high={currentStockData.high}
-                    low={currentStockData.low}
-                    volume={currentStockData.volume}
-                    onClose={() => setShowAIAnalysis(false)}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Main Chart - Primary Focus */}
+          <Card className="border-white/10 bg-[#131722]/50 backdrop-blur-sm p-5">
+            <RealLiveChart 
+              onStockChange={setSelectedStock}
+              onTimeframeChange={setSelectedTimeframe}
+            />
+          </Card>
 
           {/* AI Insights */}
           <Card className="border-white/10 bg-[#131722]/50 backdrop-blur-sm p-5">
