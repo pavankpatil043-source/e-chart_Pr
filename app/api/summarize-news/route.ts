@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { HfInference } from "@huggingface/inference"
 
 // Initialize Hugging Face with API key from env
-const hf = new HfInference(process.env.HUGGINGFACE_API_KEY || "")
+const HF_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY || ""
+const hf = HF_API_KEY ? new HfInference(HF_API_KEY) : null
+
+// Check if HF is configured
+const isHFConfigured = !!HF_API_KEY && HF_API_KEY.length > 10
 
 // List of Indian stock symbols and company names for detection
 const INDIAN_STOCKS = [
@@ -169,28 +173,46 @@ async function generateSummary(title: string, description: string, url: string):
 
     console.log(`🤖 Summarizing article (${text.length} chars) to 30 words...`)
 
-    // Use Hugging Face summarization with strict 30-word limit
-    const result = await hf.summarization({
-      model: "facebook/bart-large-cnn",
-      inputs: text.substring(0, 1500), // Limit input to avoid timeouts
-      parameters: {
-        max_length: 40,  // ~30-35 words
-        min_length: 25,  // ~20-25 words
-      },
-    })
+    // Check if Hugging Face is configured
+    if (!isHFConfigured || !hf) {
+      console.warn("⚠️ Hugging Face API key not configured, using fallback summary")
+      // Fallback: Extract first 30 words from description
+      const words = description.split(/\s+/).slice(0, 30)
+      return words.join(' ') + (description.split(/\s+/).length > 30 ? '...' : '.')
+    }
 
-    if (result && result.summary_text) {
-      const summary = result.summary_text.trim()
-      
-      // Post-process to ensure ~30 words
-      const words = summary.split(/\s+/)
-      if (words.length > 35) {
-        // Trim to 30 words and add proper ending
-        const trimmed = words.slice(0, 30).join(' ')
-        return trimmed + (trimmed.endsWith('.') ? '' : '...')
+    // Use Hugging Face summarization with strict 30-word limit
+    try {
+      const result = await Promise.race([
+        hf.summarization({
+          model: "facebook/bart-large-cnn",
+          inputs: text.substring(0, 1500), // Limit input to avoid timeouts
+          parameters: {
+            max_length: 40,  // ~30-35 words
+            min_length: 25,  // ~20-25 words
+          },
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("HF API timeout")), 10000)
+        )
+      ]) as any
+
+      if (result && result.summary_text) {
+        const summary = result.summary_text.trim()
+        
+        // Post-process to ensure ~30 words
+        const words = summary.split(/\s+/)
+        if (words.length > 35) {
+          // Trim to 30 words and add proper ending
+          const trimmed = words.slice(0, 30).join(' ')
+          return trimmed + (trimmed.endsWith('.') ? '' : '...')
+        }
+        
+        return summary
       }
-      
-      return summary
+    } catch (hfError) {
+      console.error("❌ Hugging Face API error:", hfError)
+      // Fall through to fallback
     }
 
     // Fallback to extracting first 30 words from description

@@ -14,7 +14,7 @@ interface NewsArticle {
 
 // Cache for news data
 const cache = new Map<string, { data: NewsArticle[]; timestamp: number }>()
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+const CACHE_DURATION = 1 * 60 * 1000 // 1 minute (was 5 minutes)
 
 // Simple sentiment analysis
 function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
@@ -138,8 +138,8 @@ async function fetchIndianBusinessNews(): Promise<NewsArticle[]> {
     const items = xmlText.match(itemRegex) || []
     console.log(`📰 Found ${items.length} items in Google News RSS`)
     
-    // Increase from 15 to 50 articles to cover 4 days of historical data
-    items.slice(0, 50).forEach((item, index) => {
+    // Increase to 200 articles to cover 30 days of historical data (was 50 for 4 days)
+    items.slice(0, 200).forEach((item, index) => {
       // More flexible regex patterns that handle both CDATA and plain text
       const titleMatch = item.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/)
       const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/)
@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const category = searchParams.get("category") || "all"
     const sentiment = searchParams.get("sentiment") || "all"
-    const days = parseInt(searchParams.get("days") || "4", 10) // Default to 4 days
+    const days = parseInt(searchParams.get("days") || "30", 10) // Default to 30 days (was 4)
     
     // Calculate date range (system date to last N days)
     const toDate = new Date() // Current system date
@@ -340,8 +340,8 @@ export async function GET(request: NextRequest) {
     // Sort by published date (newest first)
     filteredArticles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
 
-    // Limit to 20 articles
-    filteredArticles = filteredArticles.slice(0, 20)
+    // Limit to 100 articles (was 20)
+    filteredArticles = filteredArticles.slice(0, 100)
 
     // Cache the results
     cache.set(cacheKey, { data: filteredArticles, timestamp: Date.now() })

@@ -133,7 +133,7 @@ export default function TradingDashboard() {
     fetchMarketIndices()
     intervalRef.current = setInterval(() => {
       if (isComponentMountedRef.current) fetchMarketIndices()
-    }, 3000)
+    }, 10000) // Poll every 10 seconds - balance between real-time updates and rate limiting
 
     return () => {
       isComponentMountedRef.current = false
