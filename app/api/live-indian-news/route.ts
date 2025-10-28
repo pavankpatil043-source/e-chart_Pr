@@ -16,6 +16,41 @@ interface NewsArticle {
 const cache = new Map<string, { data: NewsArticle[]; timestamp: number }>()
 const CACHE_DURATION = 1 * 60 * 1000 // 1 minute (was 5 minutes)
 
+/**
+ * Clean text by removing HTML tags, entities, and URLs
+ */
+function cleanText(text: string): string {
+  if (!text) return ""
+  
+  return text
+    // Remove HTML tags
+    .replace(/<[^>]*>/g, " ")
+    // Remove HTML entities
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&mdash;/g, "—")
+    .replace(/&ndash;/g, "–")
+    .replace(/&hellip;/g, "...")
+    .replace(/&[a-zA-Z]+;/g, "") // Remove any other HTML entities
+    .replace(/&#\d+;/g, "") // Remove numeric entities
+    // Remove href attributes
+    .replace(/href="[^"]*"/gi, "")
+    .replace(/href='[^']*'/gi, "")
+    // Remove standalone URLs
+    .replace(/https?:\/\/[^\s]+/g, "")
+    // Remove target="_blank" and similar attributes
+    .replace(/target="[^"]*"/gi, "")
+    .replace(/rel="[^"]*"/gi, "")
+    // Remove extra spaces and newlines
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 // Simple sentiment analysis
 function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
   const positiveWords = [
@@ -180,13 +215,14 @@ async function fetchIndianBusinessNews(): Promise<NewsArticle[]> {
       const descMatch = item.match(/<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/)
       
       if (titleMatch && linkMatch) {
-        const title = titleMatch[1].trim()
-        const description = descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim().substring(0, 200) : title
+        const title = cleanText(titleMatch[1])
+        const rawDescription = descMatch ? descMatch[1] : title
+        const description = cleanText(rawDescription).substring(0, 200)
         
         articles.push({
           id: `googlenews-${Date.now()}-${index}`,
           title: title,
-          description: description,
+          description: description || title, // Fallback to title if description is empty
           url: linkMatch[1].trim(),
           source: "Google News India",
           publishedAt: pubDateMatch ? new Date(pubDateMatch[1]).toISOString() : new Date().toISOString(),
@@ -234,8 +270,8 @@ async function fetchTheNewsAPI(): Promise<NewsArticle[]> {
       .slice(0, 10)
       .map((item: any, index: number) => ({
         id: `thenews-${Date.now()}-${index}`,
-        title: item.title,
-        description: item.description || item.snippet || item.title,
+        title: cleanText(item.title),
+        description: cleanText(item.description || item.snippet || item.title),
         url: item.url || "#",
         source: item.source || "Business News",
         publishedAt: item.published_at || new Date().toISOString(),
@@ -279,8 +315,8 @@ async function fetchMediaStackNews(): Promise<NewsArticle[]> {
       .filter((item: any) => item.title && item.description)
       .map((item: any, index: number) => ({
         id: `mediastack-${Date.now()}-${index}`,
-        title: item.title,
-        description: item.description.substring(0, 200),
+        title: cleanText(item.title),
+        description: cleanText(item.description).substring(0, 200),
         url: item.url || "#",
         source: item.source || "Indian Business",
         publishedAt: item.published_at || new Date().toISOString(),

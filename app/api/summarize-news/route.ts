@@ -24,6 +24,33 @@ if (isHFConfigured) {
   console.warn("   Looking for: HUGGINGFACE_API_KEY, FACE_API_KEY, NEXT_PUBLIC_HUGGINGFACE_API_KEY, NEXT_PUBLIC_FACE_API_KEY")
 }
 
+/**
+ * Clean text by removing HTML tags, entities, and URLs
+ */
+function cleanText(text: string): string {
+  if (!text) return ""
+  
+  return text
+    .replace(/<[^>]*>/g, " ") // Remove HTML tags
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&mdash;/g, "—")
+    .replace(/&ndash;/g, "–")
+    .replace(/&hellip;/g, "...")
+    .replace(/&[a-zA-Z]+;/g, "") // Remove other HTML entities
+    .replace(/&#\d+;/g, "") // Remove numeric entities
+    .replace(/href="[^"]*"/gi, "")
+    .replace(/target="[^"]*"/gi, "")
+    .replace(/https?:\/\/[^\s]+/g, "") // Remove URLs
+    .replace(/\s+/g, " ") // Normalize spaces
+    .trim()
+}
+
 // List of Indian stock symbols and company names for detection
 const INDIAN_STOCKS = [
   { symbol: "RELIANCE.NS", names: ["reliance", "ril", "reliance industries"] },
@@ -178,13 +205,17 @@ async function fetchArticleContent(url: string, fallbackDescription: string): Pr
  */
 async function generateSummary(title: string, description: string, url: string): Promise<string> {
   try {
+    // Clean inputs first
+    const cleanTitle = cleanText(title)
+    const cleanDescription = cleanText(description)
+    
     // Try to fetch full article content for better summarization
-    const fullContent = await fetchArticleContent(url, description)
-    const text = `${title}. ${fullContent}`
+    const fullContent = await fetchArticleContent(url, cleanDescription)
+    const text = `${cleanTitle}. ${fullContent}`
     
     // Skip if text is too short
     if (text.length < 100) {
-      return description.substring(0, 150) + (description.length > 150 ? "..." : "")
+      return cleanDescription.substring(0, 150) + (cleanDescription.length > 150 ? "..." : "")
     }
 
     console.log(`🤖 Summarizing article (${text.length} chars) to 30 words...`)
@@ -192,9 +223,9 @@ async function generateSummary(title: string, description: string, url: string):
     // Check if Hugging Face is configured
     if (!isHFConfigured || !hf) {
       console.warn("⚠️ Hugging Face API key not configured, using fallback summary")
-      // Fallback: Extract first 30 words from description
-      const words = description.split(/\s+/).slice(0, 30)
-      return words.join(' ') + (description.split(/\s+/).length > 30 ? '...' : '.')
+      // Fallback: Extract first 30 words from clean description
+      const words = cleanDescription.split(/\s+/).slice(0, 30)
+      return words.join(' ') + (cleanDescription.split(/\s+/).length > 30 ? '...' : '.')
     }
 
     console.log("✅ Hugging Face API key detected, attempting AI summarization...")
@@ -216,7 +247,7 @@ async function generateSummary(title: string, description: string, url: string):
       ]) as any
 
       if (result && result.summary_text) {
-        const summary = result.summary_text.trim()
+        const summary = cleanText(result.summary_text)
         
         // Post-process to ensure ~30 words
         const words = summary.split(/\s+/)
@@ -233,15 +264,17 @@ async function generateSummary(title: string, description: string, url: string):
       // Fall through to fallback
     }
 
-    // Fallback to extracting first 30 words from description
-    const words = description.split(/\s+/).slice(0, 30)
-    return words.join(' ') + (description.split(/\s+/).length > 30 ? '...' : '.')
+    // Fallback to extracting first 30 words from clean description
+    const cleanDesc = cleanText(description)
+    const words = cleanDesc.split(/\s+/).slice(0, 30)
+    return words.join(' ') + (cleanDesc.split(/\s+/).length > 30 ? '...' : '.')
   } catch (error) {
     console.error("❌ Summarization error:", error)
     
-    // Fallback: Extract first 30 words from description
-    const words = description.split(/\s+/).slice(0, 30)
-    return words.join(' ') + (description.split(/\s+/).length > 30 ? '...' : '.')
+    // Final fallback: Extract first 30 words from clean description
+    const cleanDesc = cleanText(description)
+    const words = cleanDesc.split(/\s+/).slice(0, 30)
+    return words.join(' ') + (cleanDesc.split(/\s+/).length > 30 ? '...' : '.')
   }
 }
 
