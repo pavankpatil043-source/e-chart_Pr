@@ -253,7 +253,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const symbol = searchParams.get("symbol")
-    const ip = request.ip || request.headers.get("x-forwarded-for") || "unknown"
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
     
     if (!symbol) {
       return NextResponse.json({ 

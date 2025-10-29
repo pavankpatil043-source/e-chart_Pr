@@ -28,6 +28,7 @@ interface VisualAIAnalysisProps {
   high: number
   low: number
   volume: number
+  timeframe?: string // NEW: Timeframe from front UI
   chartData?: Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }>
   onClose?: () => void
 }
@@ -108,6 +109,7 @@ export function VisualAIChartAnalysis({
   high,
   low,
   volume,
+  timeframe = "1mo", // Default to 1 month if not provided
   chartData = [],
   onClose
 }: VisualAIAnalysisProps) {
@@ -115,6 +117,106 @@ export function VisualAIChartAnalysis({
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [realChartData, setRealChartData] = useState<Array<{
+    timestamp: number
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+    time: string
+  }>>([])
+  const [chartLoading, setChartLoading] = useState(false)
+
+  // Parse timeframe to get range and interval
+  const getTimeframeParams = (tf: string) => {
+    // Timeframe format examples: "1d-5m", "1d-15m", "5d", "1mo", "3mo", "1y"
+    if (tf.includes('-')) {
+      const [range, interval] = tf.split('-')
+      return { range, interval }
+    }
+    
+    // Default intervals for non-intraday timeframes
+    const defaults: { [key: string]: { range: string; interval: string } } = {
+      '5d': { range: '5d', interval: '15m' },
+      '1mo': { range: '1mo', interval: '1h' },
+      '3mo': { range: '3mo', interval: '1d' },
+      '6mo': { range: '6mo', interval: '1d' },
+      '1y': { range: '1y', interval: '1wk' }
+    }
+    
+    return defaults[tf] || { range: '1mo', interval: '1h' }
+  }
+
+  // Fetch real chart data for the symbol
+  const fetchRealChartData = async () => {
+    setChartLoading(true)
+    try {
+      const { range, interval } = getTimeframeParams(timeframe)
+      
+      const response = await fetch(
+        `/api/reliable-yahoo-chart?symbol=${symbol}&range=${range}&interval=${interval}`,
+        {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        }
+      )
+      
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success && result.data && Array.isArray(result.data)) {
+          const formattedData = result.data.map((item: any) => {
+            const date = new Date(item.timestamp)
+            
+            // Format time label based on interval
+            let timeLabel = ''
+            if (interval === '5m' || interval === '15m' || interval === '30m' || interval === '1h') {
+              // Intraday: Show time
+              timeLabel = date.toLocaleTimeString('en-IN', { 
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Asia/Kolkata'
+              })
+            } else {
+              // Daily+: Show date
+              timeLabel = date.toLocaleDateString('en-IN', { 
+                day: 'numeric',
+                month: 'short',
+                timeZone: 'Asia/Kolkata'
+              })
+            }
+            
+            return {
+              timestamp: item.timestamp,
+              open: item.open || item.close || 0,
+              high: item.high || item.close || 0,
+              low: item.low || item.close || 0,
+              close: item.close || 0,
+              volume: item.volume || 0,
+              time: timeLabel
+            }
+          })
+          
+          const validData = formattedData.filter((d: any) => 
+            d.open > 0 && d.high > 0 && d.low > 0 && d.close > 0
+          )
+          
+          setRealChartData(validData)
+          console.log(`✅ Loaded ${validData.length} real candles for AI analysis (${range}/${interval})`)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching real chart data:', error)
+    } finally {
+      setChartLoading(false)
+    }
+  }
+
+  // Fetch chart data when component mounts or timeframe changes
+  useEffect(() => {
+    fetchRealChartData()
+  }, [symbol, timeframe])
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true)
@@ -154,17 +256,17 @@ export function VisualAIChartAnalysis({
     }
   }
 
-  // Draw annotated chart with candlesticks
+  // Draw annotated chart with REAL candlesticks
   useEffect(() => {
-    if (!analysis || !canvasRef.current) return
+    if (!analysis || !canvasRef.current || realChartData.length === 0) return
 
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     // Set canvas size
-    canvas.width = canvas.offsetWidth * 2 // Retina display
-    canvas.height = 500 * 2 // Increased height
+    canvas.width = canvas.offsetWidth * 2
+    canvas.height = 500 * 2
     ctx.scale(2, 2)
 
     // Clear canvas
@@ -177,18 +279,17 @@ export function VisualAIChartAnalysis({
     const chartX = 50
     const chartY = 30
     
-    // Calculate price range including all levels
+    // Use REAL chart data for price calculations
+    const dataToShow = realChartData.slice(-50) // Last 50 real candles
     const allPrices = [
-      high,
-      low,
-      currentPrice,
+      ...dataToShow.flatMap(d => [d.high, d.low]),
       ...analysis.supportLevels,
       ...analysis.resistanceLevels,
+      currentPrice,
       ...(analysis.indicators?.bollingerBands ? [
         analysis.indicators.bollingerBands.lower,
         analysis.indicators.bollingerBands.upper
-      ] : []),
-      ...(chartData && chartData.length > 0 ? chartData.flatMap(d => [d.high, d.low]) : [])
+      ] : [])
     ]
     const priceMin = Math.min(...allPrices)
     const priceMax = Math.max(...allPrices)
@@ -213,201 +314,199 @@ export function VisualAIChartAnalysis({
       const price = priceMax - (priceRange / 5) * i
       ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
       ctx.font = '10px monospace'
-      ctx.fillText(`₹${price.toFixed(2)}`, 5, y + 3)
+      ctx.textAlign = 'right'
+      ctx.fillText(`₹${price.toFixed(2)}`, chartX - 10, y + 3)
     }
 
-    // Draw candlestick chart if data available
-    if (chartData && chartData.length > 0) {
-      const dataToShow = chartData.slice(-50) // Last 50 candles
-      const candleWidth = (chartWidth - 20) / dataToShow.length
-      const candleSpacing = 2
-      const bodyWidth = Math.max(2, candleWidth - candleSpacing)
+    // Draw REAL candlestick chart
+    const candleWidth = (chartWidth - 20) / dataToShow.length
+    const candleSpacing = 2
+    const bodyWidth = Math.max(2, candleWidth - candleSpacing * 2)
+    
+    dataToShow.forEach((candle, idx) => {
+      const x = chartX + 10 + idx * candleWidth + candleSpacing
+      const openY = toY(candle.open)
+      const closeY = toY(candle.close)
+      const highY = toY(candle.high)
+      const lowY = toY(candle.low)
       
-      dataToShow.forEach((candle, idx) => {
-        const x = chartX + 10 + idx * candleWidth
-        const openY = toY(candle.open)
-        const closeY = toY(candle.close)
-        const highY = toY(candle.high)
-        const lowY = toY(candle.low)
+      const isBullish = candle.close >= candle.open
+      ctx.strokeStyle = isBullish ? '#22c55e' : '#ef4444'
+      ctx.fillStyle = isBullish ? '#22c55e' : '#ef4444'
         
-        const isBullish = candle.close >= candle.open
-        ctx.strokeStyle = isBullish ? '#10b981' : '#ef4444'
-        ctx.fillStyle = isBullish ? '#10b981' : '#ef4444'
-        
-        // Draw wick
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.moveTo(x + bodyWidth / 2, highY)
-        ctx.lineTo(x + bodyWidth / 2, lowY)
-        ctx.stroke()
-        
-        // Draw body
-        const bodyHeight = Math.abs(closeY - openY)
-        const bodyY = Math.min(openY, closeY)
-        
-        if (isBullish) {
-          ctx.fillRect(x, bodyY, bodyWidth, Math.max(1, bodyHeight))
-        } else {
-          ctx.fillRect(x, bodyY, bodyWidth, Math.max(1, bodyHeight))
-        }
-      })
-    } else {
-      // Draw simple price line if no candle data
-      const priceLineY = toY(currentPrice)
-      ctx.strokeStyle = '#3b82f6'
-      ctx.lineWidth = 2
+      // Draw wick
+      ctx.lineWidth = 1
       ctx.beginPath()
-      ctx.moveTo(chartX, priceLineY)
-      ctx.lineTo(chartX + chartWidth, priceLineY)
+      ctx.moveTo(x + bodyWidth / 2, highY)
+      ctx.lineTo(x + bodyWidth / 2, lowY)
       ctx.stroke()
-    }
+      
+      // Draw body
+      const bodyHeight = Math.abs(closeY - openY)
+      const bodyY = Math.min(openY, closeY)
+      
+      if (isBullish) {
+        ctx.fillRect(x, bodyY, bodyWidth, Math.max(1, bodyHeight))
+      } else {
+        ctx.fillRect(x, bodyY, bodyWidth, Math.max(1, bodyHeight))
+      }
+    })
 
-    // Draw Bollinger Bands if available
+    // Draw Bollinger Bands FIRST (as background shading)
     if (analysis.indicators?.bollingerBands) {
       const bb = analysis.indicators.bollingerBands
       
-      // Upper Bollinger Band
       const upperY = toY(bb.upper)
-      ctx.strokeStyle = 'rgba(147, 51, 234, 0.7)' // Purple
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([8, 4])
+      const middleY = toY(bb.middle)
+      const lowerY = toY(bb.lower)
+      
+      // Shade between bands with gradient
+      const gradient = ctx.createLinearGradient(0, upperY, 0, lowerY)
+      gradient.addColorStop(0, 'rgba(147, 51, 234, 0.05)')
+      gradient.addColorStop(0.5, 'rgba(147, 51, 234, 0.12)')
+      gradient.addColorStop(1, 'rgba(147, 51, 234, 0.05)')
+      ctx.fillStyle = gradient
+      ctx.fillRect(chartX, upperY, chartWidth, lowerY - upperY)
+      
+      // Upper Bollinger Band
+      ctx.strokeStyle = 'rgba(147, 51, 234, 0.8)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([10, 5])
       ctx.beginPath()
       ctx.moveTo(chartX, upperY)
       ctx.lineTo(chartX + chartWidth, upperY)
       ctx.stroke()
       
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.9)'
-      ctx.font = 'bold 10px sans-serif'
-      ctx.fillText(`BB Upper: ₹${bb.upper.toFixed(2)}`, chartX + 10, upperY - 5)
+      ctx.fillStyle = 'rgba(147, 51, 234, 1)'
+      ctx.font = 'bold 11px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText(`🟣 BB Upper: ₹${bb.upper.toFixed(2)}`, chartX + 10, upperY - 5)
       
-      // Middle Bollinger Band (SMA)
-      const middleY = toY(bb.middle)
-      ctx.strokeStyle = 'rgba(147, 51, 234, 0.5)'
+      // Middle Bollinger Band
+      ctx.strokeStyle = 'rgba(147, 51, 234, 0.4)'
       ctx.lineWidth = 1
-      ctx.setLineDash([4, 4])
+      ctx.setLineDash([5, 5])
       ctx.beginPath()
       ctx.moveTo(chartX, middleY)
       ctx.lineTo(chartX + chartWidth, middleY)
       ctx.stroke()
       
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.7)'
-      ctx.font = '10px sans-serif'
-      ctx.fillText(`BB Mid: ₹${bb.middle.toFixed(2)}`, chartX + 10, middleY + 12)
-      
       // Lower Bollinger Band
-      const lowerY = toY(bb.lower)
-      ctx.strokeStyle = 'rgba(147, 51, 234, 0.7)'
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([8, 4])
+      ctx.strokeStyle = 'rgba(147, 51, 234, 0.8)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([10, 5])
       ctx.beginPath()
       ctx.moveTo(chartX, lowerY)
       ctx.lineTo(chartX + chartWidth, lowerY)
       ctx.stroke()
       
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.9)'
-      ctx.font = 'bold 10px sans-serif'
-      ctx.fillText(`BB Lower: ₹${bb.lower.toFixed(2)}`, chartX + 10, lowerY + 12)
+      ctx.fillStyle = 'rgba(147, 51, 234, 1)'
+      ctx.font = 'bold 11px sans-serif'
+      ctx.fillText(`🟣 BB Lower: ₹${bb.lower.toFixed(2)}`, chartX + 10, lowerY + 15)
       
-      // Shade between bands
-      ctx.fillStyle = 'rgba(147, 51, 234, 0.08)'
-      ctx.fillRect(chartX, upperY, chartWidth, lowerY - upperY)
-      
-      ctx.setLineDash([]) // Reset dash
+      ctx.setLineDash([])
     }
 
-    // Draw Fibonacci levels if available
+    // Draw Fibonacci levels with CLEAR visualization
     if (analysis.indicators?.fibonacci) {
       const fib = analysis.indicators.fibonacci
       const fibLevels = [
-        { price: fib.level_236, name: '23.6%', color: 'rgba(251, 191, 36, 0.5)' },
-        { price: fib.level_382, name: '38.2%', color: 'rgba(251, 191, 36, 0.6)' },
-        { price: fib.level_500, name: '50%', color: 'rgba(251, 191, 36, 0.8)' },
-        { price: fib.level_618, name: '61.8%', color: 'rgba(251, 191, 36, 0.6)' },
-        { price: fib.level_786, name: '78.6%', color: 'rgba(251, 191, 36, 0.5)' }
+        { price: fib.level_0, name: '0%', color: 'rgba(34, 197, 94, 0.7)', lineWidth: 2 },
+        { price: fib.level_236, name: '23.6%', color: 'rgba(251, 191, 36, 0.6)', lineWidth: 1.5 },
+        { price: fib.level_382, name: '38.2%', color: 'rgba(251, 191, 36, 0.7)', lineWidth: 1.5 },
+        { price: fib.level_500, name: '50%', color: 'rgba(251, 191, 36, 0.9)', lineWidth: 2 },
+        { price: fib.level_618, name: '61.8%', color: 'rgba(251, 191, 36, 0.7)', lineWidth: 1.5 },
+        { price: fib.level_786, name: '78.6%', color: 'rgba(251, 191, 36, 0.6)', lineWidth: 1.5 },
+        { price: fib.level_100, name: '100%', color: 'rgba(239, 68, 68, 0.7)', lineWidth: 2 }
       ]
       
-      fibLevels.forEach(({ price, name, color }) => {
+      fibLevels.forEach(({ price, name, color, lineWidth }) => {
         if (price > priceMin && price < priceMax) {
           const y = toY(price)
           
+          // Draw line
           ctx.strokeStyle = color
-          ctx.lineWidth = 1
-          ctx.setLineDash([3, 3])
+          ctx.lineWidth = lineWidth
+          ctx.setLineDash([8, 4])
           ctx.beginPath()
           ctx.moveTo(chartX, y)
           ctx.lineTo(chartX + chartWidth, y)
           ctx.stroke()
           
-          ctx.fillStyle = color
-          ctx.font = '9px sans-serif'
-          ctx.fillText(`Fib ${name}`, chartX + chartWidth - 60, y - 2)
+          // Label with background
+          ctx.fillStyle = color.replace(/[\d.]+\)/, '0.3)')
+          ctx.fillRect(chartX + chartWidth - 100, y - 15, 95, 14)
+          
+          ctx.fillStyle = color.replace(/[\d.]+\)/, '1)')
+          ctx.font = 'bold 10px sans-serif'
+          ctx.textAlign = 'left'
+          ctx.fillText(`📊 Fib ${name}`, chartX + chartWidth - 95, y - 5)
         }
       })
       
-      ctx.setLineDash([]) // Reset dash
+      ctx.setLineDash([])
     }
 
-    // Draw risk zones
-    analysis.riskZones.forEach((zone) => {
-      const y1 = toY(zone.end)
-      const y2 = toY(zone.start)
-      
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.12)'
-      ctx.fillRect(chartX, y1, chartWidth, y2 - y1)
-      
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'
-      ctx.lineWidth = 1
-      ctx.setLineDash([5, 5])
-      ctx.strokeRect(chartX, y1, chartWidth, y2 - y1)
-      ctx.setLineDash([])
-      
-      // Label
-      ctx.fillStyle = '#ef4444'
-      ctx.font = 'bold 10px sans-serif'
-      ctx.fillText('⚠️ RISK ZONE', chartX + 10, y1 + 15)
-    })
+    // Find NEAREST Support and Resistance only
+    const nearestSupport = analysis.supportLevels.reduce((nearest, level) => {
+      if (level < currentPrice) {
+        if (!nearest || level > nearest) return level
+      }
+      return nearest
+    }, null as number | null)
+    
+    const nearestResistance = analysis.resistanceLevels.reduce((nearest, level) => {
+      if (level > currentPrice) {
+        if (!nearest || level < nearest) return level
+      }
+      return nearest
+    }, null as number | null)
 
-    // Draw support levels
-    analysis.supportLevels.forEach((level) => {
-      const y = toY(level)
+    // Draw NEAREST Support only
+    if (nearestSupport) {
+      const y = toY(nearestSupport)
       
+      // Thicker, more prominent line
       ctx.strokeStyle = '#10b981'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 3
       ctx.setLineDash([])
       ctx.beginPath()
       ctx.moveTo(chartX, y)
       ctx.lineTo(chartX + chartWidth, y)
       ctx.stroke()
       
-      // Label with background
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'
-      ctx.fillRect(chartX + chartWidth - 120, y - 18, 115, 16)
+      // Label with prominent background
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.3)'
+      ctx.fillRect(chartX + chartWidth - 150, y - 22, 145, 20)
       
       ctx.fillStyle = '#10b981'
-      ctx.font = 'bold 11px sans-serif'
-      ctx.fillText(`Support: ₹${level.toFixed(2)}`, chartX + chartWidth - 115, y - 6)
-    })
+      ctx.font = 'bold 13px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText(`🛡️ Support: ₹${nearestSupport.toFixed(2)}`, chartX + chartWidth - 145, y - 7)
+    }
 
-    // Draw resistance levels
-    analysis.resistanceLevels.forEach((level) => {
-      const y = toY(level)
+    // Draw NEAREST Resistance only
+    if (nearestResistance) {
+      const y = toY(nearestResistance)
       
+      // Thicker, more prominent line
       ctx.strokeStyle = '#ef4444'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 3
       ctx.setLineDash([])
       ctx.beginPath()
       ctx.moveTo(chartX, y)
       ctx.lineTo(chartX + chartWidth, y)
       ctx.stroke()
       
-      // Label with background
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'
-      ctx.fillRect(chartX + chartWidth - 135, y - 18, 130, 16)
+      // Label with prominent background
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.3)'
+      ctx.fillRect(chartX + chartWidth - 170, y - 22, 165, 20)
       
       ctx.fillStyle = '#ef4444'
-      ctx.font = 'bold 11px sans-serif'
-      ctx.fillText(`Resistance: ₹${level.toFixed(2)}`, chartX + chartWidth - 130, y - 6)
-    })
+      ctx.font = 'bold 13px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText(`🚧 Resistance: ₹${nearestResistance.toFixed(2)}`, chartX + chartWidth - 165, y - 7)
+    }
 
     // Draw current price line with glow effect
     const currentY = toY(currentPrice)
@@ -484,6 +583,103 @@ export function VisualAIChartAnalysis({
     ctx.font = 'bold 11px sans-serif'
     ctx.fillText(`🛑 Stop Loss: ₹${analysis.stopLoss.toFixed(2)}`, chartX + 10, stopLossY - 6)
 
+    // ===== RSI INDICATOR PANEL =====
+    if (analysis.indicators?.rsi) {
+      const rsiValue = analysis.indicators.rsi
+      const rsiPanelY = chartY + chartHeight + 60
+      const rsiHeight = 80
+      
+      // Panel background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+      ctx.fillRect(chartX, rsiPanelY, chartWidth, rsiHeight)
+      
+      // Border
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(chartX, rsiPanelY, chartWidth, rsiHeight)
+      
+      // Grid lines and zones
+      const rsiToY = (value: number) => rsiPanelY + rsiHeight - (value / 100) * rsiHeight
+      
+      // Overbought zone (70-100)
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'
+      ctx.fillRect(chartX, rsiPanelY, chartWidth, rsiHeight * 0.3)
+      
+      // Oversold zone (0-30)
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'
+      ctx.fillRect(chartX, rsiToY(30), chartWidth, rsiHeight * 0.3)
+      
+      // Grid lines at 30, 50, 70
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([2, 2])
+      
+      ;[30, 50, 70].forEach(level => {
+        const y = rsiToY(level)
+        ctx.beginPath()
+        ctx.moveTo(chartX, y)
+        ctx.lineTo(chartX + chartWidth, y)
+        ctx.stroke()
+        
+        // Level labels
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+        ctx.font = '9px sans-serif'
+        ctx.textAlign = 'right'
+        ctx.fillText(String(level), chartX - 5, y + 3)
+      })
+      
+      ctx.setLineDash([])
+      
+      // RSI line (simulated with current value - in real app would show historical)
+      const currentRsiY = rsiToY(rsiValue)
+      
+      // Draw RSI value indicator
+      ctx.beginPath()
+      ctx.arc(chartX + chartWidth / 2, currentRsiY, 6, 0, Math.PI * 2)
+      
+      // Color based on zones
+      if (rsiValue > 70) {
+        ctx.fillStyle = '#ef4444' // Overbought - Red
+        ctx.strokeStyle = '#ef4444'
+      } else if (rsiValue < 30) {
+        ctx.fillStyle = '#10b981' // Oversold - Green
+        ctx.strokeStyle = '#10b981'
+      } else {
+        ctx.fillStyle = '#3b82f6' // Neutral - Blue
+        ctx.strokeStyle = '#3b82f6'
+      }
+      
+      ctx.lineWidth = 3
+      ctx.fill()
+      ctx.stroke()
+      
+      // RSI value label with background
+      const labelWidth = 80
+      const labelX = chartX + chartWidth / 2 - labelWidth / 2
+      
+      ctx.fillStyle = ctx.strokeStyle.replace(')', ', 0.9)')
+      ctx.fillRect(labelX, currentRsiY - 25, labelWidth, 18)
+      
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 12px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(`RSI: ${rsiValue.toFixed(1)}`, chartX + chartWidth / 2, currentRsiY - 12)
+      
+      // Panel title
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.font = 'bold 11px sans-serif'
+      ctx.textAlign = 'left'
+      ctx.fillText('📈 RSI Indicator', chartX + 10, rsiPanelY + 15)
+      
+      // Zone labels
+      ctx.font = '9px sans-serif'
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.7)'
+      ctx.fillText('Overbought', chartX + chartWidth - 60, rsiPanelY + 15)
+      
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.7)'
+      ctx.fillText('Oversold', chartX + chartWidth - 60, rsiPanelY + rsiHeight - 8)
+    }
+
     // Draw Y-axis
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
     ctx.lineWidth = 1
@@ -535,7 +731,7 @@ export function VisualAIChartAnalysis({
       ctx.fillText(indicators.join(' • '), chartX + 150, indicatorY)
     }
 
-  }, [analysis, currentPrice, high, low, change, changePercent, chartData])
+  }, [analysis, currentPrice, high, low, change, changePercent, realChartData])
 
   const getActionColor = (action: string) => {
     switch (action) {
@@ -572,6 +768,11 @@ export function VisualAIChartAnalysis({
             <BarChart3 className="h-5 w-5 text-purple-400" />
             <span>Visual AI Chart Analysis</span>
             <Sparkles className="h-4 w-4 text-yellow-400 animate-pulse" />
+            {/* Timeframe Badge */}
+            <Badge variant="outline" className="ml-2 bg-blue-500/20 text-blue-300 border-blue-400/30 px-2 py-0.5 text-xs font-semibold">
+              <Clock className="h-3 w-3 mr-1" />
+              {timeframe.includes('-') ? timeframe.split('-')[1].toUpperCase() : timeframe.toUpperCase()}
+            </Badge>
           </CardTitle>
           {onClose && (
             <Button 
@@ -585,7 +786,7 @@ export function VisualAIChartAnalysis({
           )}
         </div>
         <p className="text-sm text-slate-400 mt-1">
-          Get AI-powered visual insights with technical annotations for {symbol}
+          Get AI-powered visual insights with technical annotations for {symbol} ({timeframe})
         </p>
       </CardHeader>
 
@@ -658,17 +859,23 @@ export function VisualAIChartAnalysis({
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-white flex items-center">
                   <Layers className="h-4 w-4 mr-2 text-purple-400" />
-                  AI Technical Chart with Candlesticks
+                  AI Technical Chart with Real Candlesticks
                 </h4>
                 <Badge variant="outline" className="text-xs">
-                  Real-Time Analysis
+                  {chartLoading ? 'Loading Chart...' : `${realChartData.length} Candles`}
                 </Badge>
               </div>
-              <canvas
-                ref={canvasRef}
-                className="w-full rounded"
-                style={{ height: '500px' }}
-              />
+              {chartLoading ? (
+                <div className="w-full h-[500px] flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+                </div>
+              ) : (
+                <canvas
+                  ref={canvasRef}
+                  className="w-full rounded"
+                  style={{ height: '500px' }}
+                />
+              )}
             </div>
 
             {/* Technical Indicators Panel */}

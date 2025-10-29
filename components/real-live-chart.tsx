@@ -42,12 +42,17 @@ interface ChartDataPoint {
 }
 
 const TIMEFRAMES = [
-  { value: "1d", label: "1 Day", interval: "5m" },
-  { value: "5d", label: "5 Days", interval: "15m" },
-  { value: "1mo", label: "1 Month", interval: "1h" },
-  { value: "3mo", label: "3 Months", interval: "1d" },
-  { value: "6mo", label: "6 Months", interval: "1d" },
-  { value: "1y", label: "1 Year", interval: "1wk" },
+  // Intraday intervals - Live Trading View
+  { value: "1d-5m", label: "5min", fullLabel: "Today (5min)", interval: "5m", range: "1d" },
+  { value: "1d-15m", label: "15min", fullLabel: "Today (15min)", interval: "15m", range: "1d" },
+  { value: "1d-30m", label: "30min", fullLabel: "Today (30min)", interval: "30m", range: "1d" },
+  { value: "1d-1h", label: "1hr", fullLabel: "Today (1 hour)", interval: "1h", range: "1d" },
+  // Multi-day views
+  { value: "5d", label: "5D", fullLabel: "5 Days", interval: "15m", range: "5d" },
+  { value: "1mo", label: "1M", fullLabel: "1 Month", interval: "1h", range: "1mo" },
+  { value: "3mo", label: "3M", fullLabel: "3 Months", interval: "1d", range: "3mo" },
+  { value: "6mo", label: "6M", fullLabel: "6 Months", interval: "1d", range: "6mo" },
+  { value: "1y", label: "1Y", fullLabel: "1 Year", interval: "1wk", range: "1y" },
 ]
 
 interface RealLiveChartProps {
@@ -69,6 +74,7 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
   const [timeframe, setTimeframe] = useState("1mo")
   const [stockData, setStockData] = useState<StockData | null>(null)
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
+  const [fullChartData, setFullChartData] = useState<ChartDataPoint[]>([]) // Store complete data
   const [loading, setLoading] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
@@ -83,6 +89,13 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     endIndex?: number
   }>>([])
   const [showPatterns, setShowPatterns] = useState(true)
+  
+  // Chart interaction states
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [panOffset, setPanOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState<{ x: number; offset: number } | null>(null)
+  const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   
   const chartRef = useRef<HTMLCanvasElement>(null)
   const volumeChartRef = useRef<HTMLCanvasElement>(null)
@@ -155,10 +168,12 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       setChartError(null)
       
       const tf = TIMEFRAMES.find(t => t.value === range)
-      console.log(`📊 Fetching chart data for ${symbol} (${range} / ${tf?.interval})...`)
+      const apiRange = tf?.range || range // Use explicit range from config or fallback to range param
+      console.log(`📊 Fetching chart data for ${symbol} (${apiRange} / ${tf?.interval})...`)
       
+      // Use reliable-yahoo-chart API for better data quality
       const response = await fetch(
-        `/api/yahoo-chart?symbol=${symbol}&range=${range}&interval=${tf?.interval || '5m'}`,
+        `/api/reliable-yahoo-chart?symbol=${symbol}&range=${apiRange}&interval=${tf?.interval || '5m'}`,
         {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' }
@@ -168,18 +183,66 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       if (response.ok) {
         const result = await response.json()
         if (result.success && result.data && Array.isArray(result.data)) {
-          const formattedData = result.data.map((item: any) => ({
-            timestamp: item.timestamp,
-            open: item.open || item.close || 0,
-            high: item.high || item.close || 0,
-            low: item.low || item.close || 0,
-            close: item.close || 0,
-            volume: item.volume || 0,
-            time: new Date(item.timestamp).toLocaleTimeString('en-IN', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
+          // Determine if this is an intraday chart (5min, 15min, 30min, 1hr)
+          const isIntradayChart = ['1d-5m', '1d-15m', '1d-30m', '1d-1h'].includes(range)
+          
+          // Debug: Log first and last data points
+          if (result.data.length > 0) {
+            const firstItem = result.data[0]
+            const lastItem = result.data[result.data.length - 1]
+            console.log('🔍 First data point:', {
+              timestamp: firstItem.timestamp,
+              date: new Date(firstItem.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+              open: firstItem.open,
+              high: firstItem.high,
+              low: firstItem.low,
+              close: firstItem.close
             })
-          }))
+            console.log('🔍 Last data point:', {
+              timestamp: lastItem.timestamp,
+              date: new Date(lastItem.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+              open: lastItem.open,
+              high: lastItem.high,
+              low: lastItem.low,
+              close: lastItem.close
+            })
+            console.log(`📊 Price range: ₹${Math.min(...result.data.map((d: any) => d.low))} - ₹${Math.max(...result.data.map((d: any) => d.high))}`)
+          }
+          
+          const formattedData = result.data.map((item: any) => {
+            // Yahoo Finance returns timestamps in milliseconds, already in UTC
+            // For Indian stocks, we need to convert to IST (UTC+5:30)
+            const date = new Date(item.timestamp)
+            let timeLabel = ''
+            
+            if (isIntradayChart) {
+              // Intraday: Show time in HH:MM format (e.g., 09:15, 09:20, 09:25)
+              // Force IST timezone for Indian stocks
+              timeLabel = date.toLocaleTimeString('en-IN', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false, // Use 24-hour format for consistency
+                timeZone: 'Asia/Kolkata' // Explicitly use IST timezone
+              })
+            } else {
+              // Daily/Weekly: Show date (e.g., 28 Oct, 27 Oct)
+              timeLabel = date.toLocaleDateString('en-IN', { 
+                day: 'numeric',
+                month: 'short',
+                timeZone: 'Asia/Kolkata'
+              })
+            }
+            
+            return {
+              timestamp: item.timestamp,
+              open: item.open || item.close || 0,
+              high: item.high || item.close || 0,
+              low: item.low || item.close || 0,
+              close: item.close || 0,
+              volume: item.volume || 0,
+              time: timeLabel
+            }
+          })
           
           // Validate data
           const validData = formattedData.filter((d: any) => 
@@ -192,7 +255,10 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
             return
           }
           
-          setChartData(validData)
+          setFullChartData(validData) // Store complete dataset
+          setChartData(validData) // Display all data initially
+          setZoomLevel(1) // Reset zoom
+          setPanOffset(0) // Reset pan
           console.log(`✅ Got ${validData.length} valid candles from ${result.source}`)
           console.log(`   Sample candle:`, validData[0])
         } else {
@@ -732,80 +798,82 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <BarChart3 className="h-7 w-7 text-blue-400" />
-            <div>
-              <h2 className="text-2xl font-bold text-white">Live Stock Chart</h2>
-              <p className="text-sm text-slate-400">Real-time data from Yahoo Finance</p>
+      {/* Controls Bar - Always Visible at Top */}
+      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-lg p-4 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* Left: Stock Selector */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="h-6 w-6 text-blue-400" />
+              <span className="text-lg font-bold text-white">Stock Chart</span>
             </div>
+            
+            <Select value={selectedStock.symbol} onValueChange={handleStockChange}>
+              <SelectTrigger className="w-72 h-10 bg-slate-800/80 border-slate-600 text-white hover:bg-slate-700 hover:border-slate-500 transition-all">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700 max-h-96 overflow-y-auto">
+                {NIFTY_50_STOCKS.map((stock) => (
+                  <SelectItem key={stock.symbol} value={stock.symbol} className="text-white hover:bg-slate-700">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{stock.baseSymbol}</span>
+                      <span className="text-xs text-slate-400">{stock.sector}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          
-          <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse">
-            <Activity className="h-3 w-3 mr-1" />
-            Live Data
-          </Badge>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Select value={selectedStock.symbol} onValueChange={handleStockChange}>
-            <SelectTrigger className="w-64 bg-slate-800/50 border-slate-700 text-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-800 border-slate-700 max-h-96 overflow-y-auto">
-              {NIFTY_50_STOCKS.map((stock) => (
-                <SelectItem key={stock.symbol} value={stock.symbol} className="text-white hover:bg-slate-700">
-                  <div className="flex flex-col">
-                    <span className="font-medium">{stock.baseSymbol}</span>
-                    <span className="text-xs text-slate-400">{stock.sector}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={timeframe} onValueChange={handleTimeframeChange}>
-            <SelectTrigger className="w-32 bg-slate-800/50 border-slate-700 text-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-slate-800 border-slate-700">
+          {/* Right: Timeframe Buttons and Controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Timeframe Buttons */}
+            <div className="flex items-center gap-1 bg-slate-800/50 border border-slate-700 rounded-lg p-1">
               {TIMEFRAMES.map((tf) => (
-                <SelectItem key={tf.value} value={tf.value} className="text-white hover:bg-slate-700">
+                <Button
+                  key={tf.value}
+                  variant="ghost"
+                  size="sm"
+                  className={`px-3 py-1 h-8 text-xs font-medium transition-all ${
+                    timeframe === tf.value
+                      ? "bg-blue-500 text-white hover:bg-blue-600"
+                      : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                  }`}
+                  onClick={() => handleTimeframeChange(tf.value)}
+                >
                   {tf.label}
-                </SelectItem>
+                </Button>
               ))}
-            </SelectContent>
-          </Select>
+            </div>
 
-          <Badge className={isConnected ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-red-500/20 text-red-400 border-red-500/30"}>
-            {isConnected ? <Wifi className="h-3 w-3 mr-1" /> : <WifiOff className="h-3 w-3 mr-1" />}
-            {isConnected ? "LIVE" : "OFFLINE"}
-          </Badge>
+            <Badge className={isConnected ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-red-500/20 text-red-400 border-red-500/30"}>
+              {isConnected ? <Wifi className="h-3 w-3 mr-1" /> : <WifiOff className="h-3 w-3 mr-1" />}
+              {isConnected ? "LIVE" : "OFFLINE"}
+            </Badge>
 
-          <Button
-            variant={showPatterns ? "default" : "outline"}
-            size="sm"
-            className={showPatterns ? "bg-purple-600 hover:bg-purple-700 text-white" : "border-slate-700 text-white hover:bg-slate-800"}
-            onClick={() => setShowPatterns(!showPatterns)}
-          >
-            <Activity className="h-4 w-4 mr-2" />
-            {showPatterns ? "Hide" : "Show"} Patterns
-            {detectedPatterns.length > 0 && (
-              <Badge className="ml-2 bg-white/20 text-white text-xs">{detectedPatterns.length}</Badge>
-            )}
-          </Button>
+            <Button
+              variant={showPatterns ? "default" : "outline"}
+              size="sm"
+              className={showPatterns ? "bg-purple-600 hover:bg-purple-700 text-white" : "border-slate-700 text-white hover:bg-slate-800"}
+              onClick={() => setShowPatterns(!showPatterns)}
+            >
+              <Activity className="h-4 w-4 mr-2" />
+              {showPatterns ? "Hide" : "Show"} Patterns
+              {detectedPatterns.length > 0 && (
+                <Badge className="ml-2 bg-white/20 text-white text-xs">{detectedPatterns.length}</Badge>
+              )}
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-slate-700 text-white hover:bg-slate-800"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-slate-700 text-white hover:bg-slate-800"
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -818,9 +886,6 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
                 <div>
                   <h3 className="text-2xl font-bold text-white flex items-center gap-2">
                     {stockData.companyName}
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30 animate-pulse">
-                      LIVE
-                    </Badge>
                   </h3>
                   <div className="flex items-center space-x-2 text-slate-400 text-sm">
                     <span>{stockData.symbol}</span>

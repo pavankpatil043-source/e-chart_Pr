@@ -47,20 +47,51 @@ interface PatternRecognitionResult {
 const patternCache = new Map<string, { data: PatternRecognitionResult; timestamp: number }>()
 const CACHE_DURATION = 300000 // 5 minutes
 
-// Fetch candle data
-async function fetchCandleData(symbol: string, days: number = 60, requestUrl: string): Promise<CandleData[]> {
+// Fetch candle data based on the actual timeframe
+async function fetchCandleData(symbol: string, timeframe: string, requestUrl: string): Promise<CandleData[]> {
   try {
     const nsSymbol = symbol.endsWith('.NS') ? symbol : `${symbol}.NS`
     
+    // Map timeframe to appropriate range and interval for pattern analysis
     let range = '3mo'
     let interval = '1d'
+    
+    // Determine range and interval based on selected timeframe
+    if (timeframe === '1d-5m') {
+      range = '1d'
+      interval = '5m'
+    } else if (timeframe === '1d-15m') {
+      range = '1d'
+      interval = '15m'
+    } else if (timeframe === '1d-30m') {
+      range = '1d'
+      interval = '30m'
+    } else if (timeframe === '1d-1h') {
+      range = '1d'
+      interval = '1h'
+    } else if (timeframe === '5d' || timeframe === '5D') {
+      range = '5d'
+      interval = '15m'
+    } else if (timeframe === '1mo' || timeframe === '1M') {
+      range = '1mo'
+      interval = '1h'
+    } else if (timeframe === '3mo' || timeframe === '3M') {
+      range = '3mo'
+      interval = '1d'
+    } else if (timeframe === '6mo' || timeframe === '6M') {
+      range = '6mo'
+      interval = '1d'
+    } else if (timeframe === '1y' || timeframe === '1Y') {
+      range = '1y'
+      interval = '1wk'
+    }
     
     // Extract origin from the request URL to call the correct host/port
     const url = new URL(requestUrl)
     const origin = url.origin
-    const apiUrl = `${origin}/api/yahoo-chart`
+    const apiUrl = `${origin}/api/reliable-yahoo-chart`
     
-    console.log(`📊 Pattern Recognition: Fetching chart data from ${apiUrl}`)
+    console.log(`📊 Pattern Recognition: Fetching ${timeframe} chart data (${range} / ${interval}) from ${apiUrl}`)
     
     const response = await fetch(
       `${apiUrl}?symbol=${nsSymbol}&interval=${interval}&range=${range}`,
@@ -72,7 +103,8 @@ async function fetchCandleData(symbol: string, days: number = 60, requestUrl: st
     const result = await response.json()
     
     if (result.success && result.data && Array.isArray(result.data)) {
-      return result.data.slice(-days)
+      console.log(`✅ Fetched ${result.data.length} candles for pattern analysis`)
+      return result.data
     }
     
     throw new Error('Invalid chart data')
@@ -488,13 +520,15 @@ export async function GET(request: NextRequest) {
       })
     }
     
-    console.log(`🔍 Detecting patterns for ${symbol}...`)
+    console.log(`🔍 Detecting patterns for ${symbol} on ${timeframe} timeframe...`)
     
-    const candles = await fetchCandleData(symbol, 60, request.url)
+    const candles = await fetchCandleData(symbol, timeframe, request.url)
     
     if (candles.length === 0) {
       throw new Error('No candle data available')
     }
+    
+    console.log(`📊 Analyzing ${candles.length} candles for pattern detection on ${timeframe}`)
     
     const patterns: PatternMatch[] = []
     

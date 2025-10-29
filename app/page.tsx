@@ -74,23 +74,39 @@ export default function TradingDashboard() {
     lastFetchTimeRef.current = now
     if (!isComponentMountedRef.current) return
 
+    console.log('🔄 Fetching market data at:', new Date().toLocaleTimeString())
+
     try {
       setIndicesLoading(true)
       
-      // Fetch both market indices and Gift Nifty in parallel
+      // Fetch both market indices and Gift Nifty in parallel with timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      
       const [indicesResponse, giftNiftyResponse] = await Promise.all([
         fetch("/api/indian-indices", {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          signal: controller.signal,
+        }).catch(err => {
+          console.warn("Indian indices API failed:", err.message)
+          return null
         }),
         fetch("/api/gift-nifty", {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          signal: controller.signal,
+        }).catch(err => {
+          console.warn("Gift Nifty API failed:", err.message)
+          return null
         })
       ])
       
-      const indicesData = await indicesResponse.json()
-      const giftNiftyData = await giftNiftyResponse.json()
+      clearTimeout(timeoutId)
+      
+      // Safely parse responses
+      const indicesData = indicesResponse ? await indicesResponse.json().catch(() => ({ success: false })) : { success: false }
+      const giftNiftyData = giftNiftyResponse ? await giftNiftyResponse.json().catch(() => ({ success: false })) : { success: false }
 
       if (indicesData.success && isComponentMountedRef.current && Array.isArray(indicesData.indices)) {
         setMarketIndices(indicesData.indices)
@@ -155,12 +171,14 @@ export default function TradingDashboard() {
 
   useEffect(() => {
     isComponentMountedRef.current = true
+    console.log('⏰ Setting up 3-second auto-refresh interval')
     fetchMarketIndices()
     intervalRef.current = setInterval(() => {
       if (isComponentMountedRef.current) fetchMarketIndices()
     }, 3000) // Poll every 3 seconds - real-time stock price updates
 
     return () => {
+      console.log('🛑 Cleaning up interval')
       isComponentMountedRef.current = false
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
@@ -293,6 +311,7 @@ export default function TradingDashboard() {
                     high={currentStockData.high}
                     low={currentStockData.low}
                     volume={currentStockData.volume}
+                    timeframe={selectedTimeframe}
                     onClose={() => setShowAIAnalysis(false)}
                   />
                 </div>

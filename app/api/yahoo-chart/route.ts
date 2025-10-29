@@ -141,7 +141,7 @@ async function fetchRealChartData(symbol: string, range = "1mo", interval = "1d"
               close: Number.parseFloat((quote.close[index] || 0).toFixed(2)),
               volume: quote.volume[index] || 0,
             }))
-            .filter((item) => item.open > 0 && item.close > 0)
+            .filter((item: any) => item.open > 0 && item.close > 0)
 
           return {
             symbol: symbol.replace(".NS", ""),
@@ -284,7 +284,7 @@ export async function GET(request: NextRequest) {
     const symbol = searchParams.get("symbol")
     const range = searchParams.get("range") || "1mo"
     const interval = searchParams.get("interval") || "1d"
-    const ip = request.ip || request.headers.get("x-forwarded-for") || "unknown"
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
 
     if (!symbol) {
       return NextResponse.json({ success: false, error: "Symbol parameter is required" }, { status: 400 })

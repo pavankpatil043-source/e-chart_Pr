@@ -20,10 +20,10 @@ interface ChartResponse {
 // Longer cache duration for chart data (5 minutes for intraday, 30 minutes for daily)
 const chartCache = new Map<string, { data: ChartResponse; timestamp: number }>()
 
-// More conservative rate limiting
+// Relaxed rate limiting for better user experience
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 const RATE_LIMIT_WINDOW = 60000 // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 2 // Only 2 requests per minute per IP
+const MAX_REQUESTS_PER_WINDOW = 20 // Allow 20 requests per minute per IP (increased from 2)
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now()
