@@ -9,6 +9,7 @@ import RealLiveChart from "@/components/real-live-chart"
 import { ChatPanel } from "@/components/chat-panel"
 import { EnhancedNewsPanel } from "@/components/enhanced-news-panel"
 import { FIIDIIDataPanel } from "@/components/fii-dii-data-panel"
+import { FIIDIIDataPanelEnhanced } from "@/components/fii-dii-data-panel-enhanced"
 import { AIInsightsDashboard } from "@/components/ai-insights-dashboard"
 import { VisualAIChartAnalysis } from "@/components/visual-ai-chart-analysis"
 import { POPULAR_NIFTY_STOCKS } from "@/lib/nifty-50-stocks"
@@ -157,7 +158,7 @@ export default function TradingDashboard() {
     fetchMarketIndices()
     intervalRef.current = setInterval(() => {
       if (isComponentMountedRef.current) fetchMarketIndices()
-    }, 10000) // Poll every 10 seconds - balance between real-time updates and rate limiting
+    }, 3000) // Poll every 3 seconds - real-time stock price updates
 
     return () => {
       isComponentMountedRef.current = false
@@ -273,9 +274,9 @@ export default function TradingDashboard() {
             />
           </Card>
 
-          {/* FII/DII - Minimal Card */}
+          {/* FII/DII - Enhanced Card with AI Analysis */}
           <Card className="border-white/10 bg-[#131722]/50 backdrop-blur-sm p-5">
-            <FIIDIIDataPanel />
+            <FIIDIIDataPanelEnhanced />
           </Card>
 
           {/* AI Chart Analysis Modal - Full Screen */}
