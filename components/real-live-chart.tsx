@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { NIFTY_50_STOCKS, POPULAR_NIFTY_STOCKS, toBaseSymbol } from "@/lib/nifty-50-stocks"
 import { createChart, ColorType, CrosshairMode, type IChartApi } from "lightweight-charts"
+import { useLivePrice } from "@/hooks/use-live-price"
 
 interface StockData {
   symbol: string
@@ -112,23 +113,26 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
   const timeframeRef = useRef<string>(timeframe) // Track current timeframe for formatters
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Live price WebSocket connection
+  const { liveData, isConnected: isLiveConnected } = useLivePrice(selectedStock.symbol, true)
+
   // NSE/BSE Holiday list for 2025 (update annually)
   const MARKET_HOLIDAYS_2025 = [
-    '2025-01-26', // Republic Day
-    '2025-03-14', // Holi
-    '2025-03-31', // Id-Ul-Fitr
-    '2025-04-10', // Mahavir Jayanti
-    '2025-04-14', // Dr. Ambedkar Jayanti
-    '2025-04-18', // Good Friday
-    '2025-05-01', // Maharashtra Day
-    '2025-06-07', // Bakri Id
-    '2025-08-15', // Independence Day
-    '2025-08-27', // Ganesh Chaturthi
-    '2025-10-02', // Gandhi Jayanti / Dussehra
-    '2025-10-21', // Diwali (Laxmi Pujan)
-    '2025-10-22', // Diwali (Balipratipada)
-    '2025-11-05', // Guru Nanak Jayanti
-    '2025-12-25', // Christmas
+    { date: '2025-01-26', name: 'Republic Day' },
+    { date: '2025-03-14', name: 'Holi' },
+    { date: '2025-03-31', name: 'Id-Ul-Fitr' },
+    { date: '2025-04-10', name: 'Mahavir Jayanti' },
+    { date: '2025-04-14', name: 'Dr. Ambedkar Jayanti' },
+    { date: '2025-04-18', name: 'Good Friday' },
+    { date: '2025-05-01', name: 'Maharashtra Day' },
+    { date: '2025-06-07', name: 'Bakri Id' },
+    { date: '2025-08-15', name: 'Independence Day' },
+    { date: '2025-08-27', name: 'Ganesh Chaturthi' },
+    { date: '2025-10-02', name: 'Gandhi Jayanti' },
+    { date: '2025-10-21', name: 'Diwali (Laxmi Pujan)' },
+    { date: '2025-10-22', name: 'Diwali (Balipratipada)' },
+    { date: '2025-11-05', name: 'Guru Nanak Jayanti' },
+    { date: '2025-12-25', name: 'Christmas' },
   ]
 
   // Check if market is open based on day, time, and holidays
@@ -152,7 +156,7 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     
     // Check if it's a holiday
     const dateString = istTime.toISOString().split('T')[0]
-    if (MARKET_HOLIDAYS_2025.includes(dateString)) {
+    if (MARKET_HOLIDAYS_2025.some(h => h.date === dateString)) {
       return false
     }
     
@@ -638,6 +642,72 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     }
   }, [chartData, srLevels])
 
+  // Update chart with live price data
+  useEffect(() => {
+    if (!liveData || !candlestickSeriesRef.current || !isLiveConnected) return
+    
+    // Only update if we're on an intraday timeframe (5m, 15m, 30m)
+    const isIntradayTimeframe = timeframe.includes('5m') || timeframe.includes('15m') || timeframe.includes('30m')
+    if (!isIntradayTimeframe) return
+
+    console.log(`📊 Live price update: ${liveData.symbol} @ ₹${liveData.price.toFixed(2)}`)
+    
+    // Update the last candle with live data
+    const lastCandle = {
+      time: Math.floor(liveData.timestamp / 1000) as any,
+      open: liveData.open,
+      high: liveData.high,
+      low: liveData.low,
+      close: liveData.price,
+    }
+
+    try {
+      candlestickSeriesRef.current.update(lastCandle)
+      
+      // Update volume
+      if (volumeSeriesRef.current) {
+        const volumeColor = liveData.price >= liveData.open ? '#10b98180' : '#ef444480'
+        volumeSeriesRef.current.update({
+          time: Math.floor(liveData.timestamp / 1000) as any,
+          value: liveData.volume,
+          color: volumeColor,
+        })
+      }
+    } catch (error) {
+      console.error('Error updating live price:', error)
+    }
+  }, [liveData, isLiveConnected, timeframe])
+
+  // Update stock info panel with live price data
+  useEffect(() => {
+    if (!liveData || !stockData) return
+
+    // Update stockData with latest live prices
+    setStockData(prev => prev ? {
+      ...prev,
+      price: liveData.price,
+      change: liveData.change,
+      changePercent: liveData.changePercent,
+      high: liveData.high,
+      low: liveData.low,
+      open: liveData.open,
+      volume: liveData.volume,
+    } : null)
+
+    // Notify parent component of price update
+    if (onDataUpdate) {
+      onDataUpdate({
+        price: liveData.price,
+        previousClose: liveData.previousClose,
+        change: liveData.change,
+        changePercent: liveData.changePercent,
+        high: liveData.high,
+        low: liveData.low,
+        volume: liveData.volume,
+      })
+    }
+  }, [liveData])
+
   // Legacy draw functions - kept for pattern overlay if needed
   const drawChart = () => {
     // Now handled by TradingView Lightweight Charts
@@ -718,24 +788,16 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       setChartData([])
       setFullChartData([])
       
+      // Initial fetch only - SSE stream (useLivePrice) handles live updates
       fetchStockPrice(selectedStock.symbol)
       fetchChartData(selectedStock.symbol, timeframe)
       
-      // Update price every 5 seconds
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current)
-      }
-      
-      updateIntervalRef.current = setInterval(() => {
-        fetchStockPrice(selectedStock.symbol)
-      }, 5000)
+      // ✅ REMOVED REDUNDANT POLLING: SSE stream already updates stock price every 5s
+      // No need for setInterval - useLivePrice hook provides real-time updates
     }
 
-    return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current)
-      }
-    }
+    // ✅ Cleanup no longer needed (no interval to clear)
+    return () => {}
   }, [selectedStock, timeframe])
 
   const handleStockChange = (symbol: string) => {
@@ -1071,9 +1133,20 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       <Card className="bg-slate-900/50 border-slate-700/50 backdrop-blur-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-white flex items-center justify-between">
-            <div className="flex items-center">
-              <Activity className="h-5 w-5 mr-2 text-blue-400" />
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-blue-400" />
               Live Candlestick Chart
+              {isLiveConnected && isMarketOpen && (
+                <Badge variant="default" className="bg-red-600 hover:bg-red-600 animate-pulse ml-2">
+                  <div className="h-2 w-2 rounded-full bg-white mr-1.5 animate-ping"></div>
+                  LIVE
+                </Badge>
+              )}
+              {isLiveConnected && !isMarketOpen && (
+                <Badge variant="secondary" className="bg-slate-600 ml-2">
+                  Connected
+                </Badge>
+              )}
             </div>
             {chartError && (
               <Badge className="bg-red-500/20 text-red-400 border-red-500/30">

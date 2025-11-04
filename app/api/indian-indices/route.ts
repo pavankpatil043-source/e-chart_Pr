@@ -13,13 +13,13 @@ interface MarketIndex {
 
 // Cache for API responses to avoid rate limiting
 const cacheMap = new Map<string, { data: any; timestamp: number }>()
-const CACHE_DURATION = 60000 // 1 minute cache for indices
+const CACHE_DURATION = 8000 // 8 second cache - balances freshness with rate limits (10s polling)
 
 // Rate limiting storage
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 
 // Rate limiting function
-function checkRateLimit(ip: string, maxRequests = 5, windowMs = 120000): boolean {
+function checkRateLimit(ip: string, maxRequests = 15, windowMs = 120000): boolean {
   const now = Date.now()
   const key = `indices-${ip}`
 
@@ -189,9 +189,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check cache first
+    // Check cache first (8-second cache for 10s polling)
     const cacheKey = "indian-indices"
-    const cachedData = getCachedData(cacheKey, 60000) // 1 minute cache
+    const cachedData = getCachedData(cacheKey, 8000) // 8 second cache
 
     if (cachedData) {
       return NextResponse.json({

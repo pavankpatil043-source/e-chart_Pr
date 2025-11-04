@@ -18,24 +18,25 @@ import { POPULAR_NIFTY_STOCKS } from "@/lib/nifty-50-stocks"
 function MarketStatusBadge() {
   const [isMarketOpen, setIsMarketOpen] = useState(false)
   const [currentTime, setCurrentTime] = useState("")
+  const [holidayReason, setHolidayReason] = useState<string | null>(null)
 
   // NSE/BSE Holiday list for 2025 (update annually)
   const MARKET_HOLIDAYS_2025 = [
-    '2025-01-26', // Republic Day
-    '2025-03-14', // Holi
-    '2025-03-31', // Id-Ul-Fitr
-    '2025-04-10', // Mahavir Jayanti
-    '2025-04-14', // Dr. Ambedkar Jayanti
-    '2025-04-18', // Good Friday
-    '2025-05-01', // Maharashtra Day
-    '2025-06-07', // Bakri Id
-    '2025-08-15', // Independence Day
-    '2025-08-27', // Ganesh Chaturthi
-    '2025-10-02', // Gandhi Jayanti / Dussehra
-    '2025-10-21', // Diwali (Laxmi Pujan)
-    '2025-10-22', // Diwali (Balipratipada)
-    '2025-11-05', // Guru Nanak Jayanti
-    '2025-12-25', // Christmas
+    { date: '2025-01-26', name: 'Republic Day' },
+    { date: '2025-03-14', name: 'Holi' },
+    { date: '2025-03-31', name: 'Id-Ul-Fitr' },
+    { date: '2025-04-10', name: 'Mahavir Jayanti' },
+    { date: '2025-04-14', name: 'Dr. Ambedkar Jayanti' },
+    { date: '2025-04-18', name: 'Good Friday' },
+    { date: '2025-05-01', name: 'Maharashtra Day' },
+    { date: '2025-06-07', name: 'Bakri Id' },
+    { date: '2025-08-15', name: 'Independence Day' },
+    { date: '2025-08-27', name: 'Ganesh Chaturthi' },
+    { date: '2025-10-02', name: 'Gandhi Jayanti' },
+    { date: '2025-10-21', name: 'Diwali (Laxmi Pujan)' },
+    { date: '2025-10-22', name: 'Diwali (Balipratipada)' },
+    { date: '2025-11-05', name: 'Guru Nanak Jayanti' },
+    { date: '2025-12-25', name: 'Christmas' },
   ]
 
   const checkMarketStatus = () => {
@@ -53,17 +54,27 @@ function MarketStatusBadge() {
     
     // Weekend check
     if (dayOfWeek === 0 || dayOfWeek === 6) {
+      setHolidayReason(dayOfWeek === 0 ? 'Sunday' : 'Saturday')
       return false
     }
     
     // Holiday check
     const dateString = istTime.toISOString().split('T')[0]
-    if (MARKET_HOLIDAYS_2025.includes(dateString)) {
+    const holiday = MARKET_HOLIDAYS_2025.find(h => h.date === dateString)
+    if (holiday) {
+      setHolidayReason(holiday.name)
       return false
     }
     
     // Trading hours check
-    return currentTime >= marketOpen && currentTime <= marketClose
+    const isOpen = currentTime >= marketOpen && currentTime <= marketClose
+    if (!isOpen) {
+      setHolidayReason(currentTime < marketOpen ? 'Pre-Market' : 'After Market Hours')
+    } else {
+      setHolidayReason(null)
+    }
+    
+    return isOpen
   }
 
   useEffect(() => {
@@ -97,6 +108,11 @@ function MarketStatusBadge() {
         <div className="text-xs font-medium text-slate-300 tabular-nums">
           {currentTime}
         </div>
+        {!isMarketOpen && holidayReason && (
+          <div className="text-xs font-medium text-amber-400 mt-0.5">
+            🪔 {holidayReason}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -192,9 +208,18 @@ export default function TradingDashboard() {
       
       clearTimeout(timeoutId)
       
+      // Check for rate limiting (429) responses - don't spam console
+      if (indicesResponse && indicesResponse.status === 429) {
+        console.warn("⚠️ Rate limited on indices API - will retry in 15s")
+        return // Skip fallback data, use existing data
+      }
+      if (giftNiftyResponse && giftNiftyResponse.status === 429) {
+        console.warn("⚠️ Rate limited on Gift Nifty API - will retry in 15s")
+      }
+      
       // Safely parse responses
-      const indicesData = indicesResponse ? await indicesResponse.json().catch(() => ({ success: false })) : { success: false }
-      const giftNiftyData = giftNiftyResponse ? await giftNiftyResponse.json().catch(() => ({ success: false })) : { success: false }
+      const indicesData = indicesResponse && indicesResponse.ok ? await indicesResponse.json().catch(() => ({ success: false })) : { success: false }
+      const giftNiftyData = giftNiftyResponse && giftNiftyResponse.ok ? await giftNiftyResponse.json().catch(() => ({ success: false })) : { success: false }
 
       if (indicesData.success && isComponentMountedRef.current && Array.isArray(indicesData.indices)) {
         setMarketIndices(indicesData.indices)
@@ -259,11 +284,11 @@ export default function TradingDashboard() {
 
   useEffect(() => {
     isComponentMountedRef.current = true
-    console.log('⏰ Setting up 3-second auto-refresh interval')
+    console.log('⏰ Setting up 10-second auto-refresh for market indices')
     fetchMarketIndices()
     intervalRef.current = setInterval(() => {
       if (isComponentMountedRef.current) fetchMarketIndices()
-    }, 3000) // Poll every 3 seconds - real-time stock price updates
+    }, 10000) // Poll every 10 seconds - optimal for traders (3x faster than 30s, safe for rate limits)
 
     return () => {
       console.log('🛑 Cleaning up interval')

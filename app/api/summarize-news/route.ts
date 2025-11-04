@@ -1,28 +1,56 @@
 import { NextRequest, NextResponse } from "next/server"
-import { HfInference } from "@huggingface/inference"
 
-// Initialize Hugging Face with API key from env
-// Check multiple possible environment variable names
-const HF_API_KEY = 
-  process.env.HUGGINGFACE_API_KEY || 
-  process.env.NEXT_PUBLIC_HUGGINGFACE_API_KEY || 
-  process.env.FACE_API_KEY ||  // Vercel environment variable name
-  process.env.NEXT_PUBLIC_FACE_API_KEY ||
+// ✅ SWITCHED FROM HUGGING FACE TO GOOGLE GEMINI FLASH
+// Google Gemini Flash - FREE, Fast (1-2s), Reliable (99% uptime)
+// Get free API key: https://aistudio.google.com/app/apikey
+const GEMINI_API_KEY = 
+  process.env.GOOGLE_GEMINI_API_KEY || 
+  process.env.NEXT_PUBLIC_GOOGLE_GEMINI_API_KEY ||
   ""
 
-const hf = HF_API_KEY ? new HfInference(HF_API_KEY) : null
+// Check if Gemini is configured
+const isGeminiConfigured = !!GEMINI_API_KEY && GEMINI_API_KEY.length > 10
 
-// Check if HF is configured
-const isHFConfigured = !!HF_API_KEY && HF_API_KEY.length > 10
+// Track daily quota status (reset at midnight UTC)
+let dailyQuotaExceeded = false
+let quotaResetTime = 0
 
 // Log configuration status (without exposing the key)
-console.log(`🔑 Hugging Face API configured: ${isHFConfigured}`)
-if (isHFConfigured) {
-  console.log(`✅ API Key length: ${HF_API_KEY.length} chars (starts with: ${HF_API_KEY.substring(0, 6)}...)`)
+console.log(`🔑 Google Gemini Flash API configured: ${isGeminiConfigured}`)
+if (isGeminiConfigured) {
+  console.log(`✅ API Key length: ${GEMINI_API_KEY.length} chars (starts with: ${GEMINI_API_KEY.substring(0, 6)}...)`)
 } else {
-  console.warn("⚠️ Hugging Face API key not found in environment variables")
-  console.warn("   Looking for: HUGGINGFACE_API_KEY, FACE_API_KEY, NEXT_PUBLIC_HUGGINGFACE_API_KEY, NEXT_PUBLIC_FACE_API_KEY")
+  console.warn("⚠️ Google Gemini API key not found in environment variables")
+  console.warn("   Get free API key: https://aistudio.google.com/app/apikey")
+  console.warn("   Add to Vercel: GOOGLE_GEMINI_API_KEY")
 }
+
+// 🎯 SMART CACHING: Store summaries to avoid re-processing same articles
+// Key: article URL (unique identifier), Value: { summary, affectedStocks, marketImpactScore, timestamp }
+interface CachedSummary {
+  summary: string
+  affectedStocks: string[]
+  marketImpactScore: number
+  timestamp: number
+}
+
+const summaryCache = new Map<string, CachedSummary>()
+const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours
+
+// Clean old cache entries periodically
+setInterval(() => {
+  const now = Date.now()
+  let cleaned = 0
+  for (const [key, value] of summaryCache.entries()) {
+    if (now - value.timestamp > CACHE_DURATION) {
+      summaryCache.delete(key)
+      cleaned++
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`🧹 Cleaned ${cleaned} old summaries from cache. Cache size: ${summaryCache.size}`)
+  }
+}, 60 * 60 * 1000) // Check every hour
 
 /**
  * Clean text by removing HTML tags, entities, and URLs
@@ -201,7 +229,10 @@ async function fetchArticleContent(url: string, fallbackDescription: string): Pr
 }
 
 /**
- * Generate a concise 30-word summary using Hugging Face AI
+ * Generate a concise 30-word summary using Google Gemini Flash AI
+ */
+/**
+ * Generate AI summary with automatic retry on rate limit
  */
 async function generateSummary(title: string, description: string, url: string): Promise<string> {
   try {
@@ -218,53 +249,131 @@ async function generateSummary(title: string, description: string, url: string):
       return cleanDescription.substring(0, 150) + (cleanDescription.length > 150 ? "..." : "")
     }
 
-    console.log(`🤖 Summarizing article (${text.length} chars) to 30 words...`)
+    console.log(`🤖 Summarizing article (${text.length} chars) to 30 words with Gemini Flash...`)
 
-    // Check if Hugging Face is configured
-    if (!isHFConfigured || !hf) {
-      console.warn("⚠️ Hugging Face API key not configured, using fallback summary")
+    // Check if daily quota exceeded
+    if (dailyQuotaExceeded && Date.now() < quotaResetTime) {
+      console.warn(`⚠️ Daily quota exceeded, using fallback until ${new Date(quotaResetTime).toISOString()}`)
+      const words = cleanDescription.split(/\s+/).slice(0, 30)
+      return words.join(' ') + (cleanDescription.split(/\s+/).length > 30 ? '...' : '.')
+    }
+
+    // Check if Gemini is configured
+    if (!isGeminiConfigured) {
+      console.warn("⚠️ Google Gemini API key not configured, using fallback summary")
       // Fallback: Extract first 30 words from clean description
       const words = cleanDescription.split(/\s+/).slice(0, 30)
       return words.join(' ') + (cleanDescription.split(/\s+/).length > 30 ? '...' : '.')
     }
 
-    console.log("✅ Hugging Face API key detected, attempting AI summarization...")
+    console.log("✅ Google Gemini API key detected, attempting AI summarization...")
 
-    // Use Hugging Face summarization with strict 30-word limit
-    try {
-      const result = await Promise.race([
-        hf.summarization({
-          model: "facebook/bart-large-cnn",
-          inputs: text.substring(0, 1500), // Limit input to avoid timeouts
-          parameters: {
-            max_length: 40,  // ~30-35 words
-            min_length: 25,  // ~20-25 words
-          },
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("HF API timeout")), 30000) // Increased from 10s to 30s
-        )
-      ]) as any
-
-      if (result && result.summary_text) {
-        const summary = cleanText(result.summary_text)
+    // Use Google Gemini Flash for fast, reliable summarization with retry logic
+    const maxRetries = 3
+    let lastError: Error | null = null
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`
         
-        // Post-process to ensure ~30 words
-        const words = summary.split(/\s+/)
-        if (words.length > 35) {
-          // Trim to 30 words and add proper ending
-          const trimmed = words.slice(0, 30).join(' ')
-          return trimmed + (trimmed.endsWith('.') ? '' : '...')
+        if (attempt > 1) {
+          console.log(`� Retry attempt ${attempt}/${maxRetries}...`)
         }
         
-        return summary
+        const response = await Promise.race([
+          fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: `Summarize this in exactly 30 words: ${cleanTitle}. ${text.substring(0, 500)}`
+                }]
+              }],
+              generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 60,
+              }
+            })
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Gemini API timeout")), 10000) // 10 second timeout
+          )
+        ]) as Response
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          
+          // If rate limited (429), check if it's daily quota
+          if (response.status === 429) {
+            const errorData = JSON.parse(errorText)
+            
+            // Check if daily quota exceeded
+            if (errorData.error?.details?.some((d: any) => 
+              d['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' &&
+              d.violations?.some((v: any) => v.quotaId?.includes('PerDay'))
+            )) {
+              console.error('🚫 DAILY QUOTA EXCEEDED - Switching to fallback summaries until tomorrow')
+              dailyQuotaExceeded = true
+              // Reset at next midnight UTC
+              const tomorrow = new Date()
+              tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+              tomorrow.setUTCHours(0, 0, 0, 0)
+              quotaResetTime = tomorrow.getTime()
+              throw new Error(`Daily quota exceeded`)
+            }
+            
+            // Otherwise it's per-minute rate limit, retry
+            if (attempt < maxRetries) {
+              const waitTime = Math.min(5000 * attempt, 15000) // 5s, 10s, 15s
+              console.warn(`⏳ Rate limited, waiting ${waitTime/1000}s before retry...`)
+              await new Promise(resolve => setTimeout(resolve, waitTime))
+              continue // Retry
+            }
+          }
+          
+          throw new Error(`Gemini API error: ${response.status}`)
+        }
+
+        const data = await response.json()
+      
+        if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+          const summary = cleanText(data.candidates[0].content.parts[0].text)
+          
+          // Post-process to ensure ~30 words
+          const words = summary.split(/\s+/)
+          if (words.length > 35) {
+            // Trim to 30 words
+            const trimmed = words.slice(0, 30).join(' ')
+            return trimmed + (trimmed.endsWith('.') ? '' : '...')
+          }
+          
+          console.log(`✅ Gemini summary generated: ${words.length} words`)
+          return summary
+        }
+        
+        // No valid response, use fallback
+        break
+        
+      } catch (geminiError: any) {
+        lastError = geminiError
+        
+        // If it's a timeout or network error and we have retries left, try again
+        if (attempt < maxRetries && (geminiError.message?.includes('timeout') || geminiError.message?.includes('fetch'))) {
+          const waitTime = 2000 * attempt // 2s, 4s, 6s
+          console.warn(`⏳ Network error, retrying in ${waitTime/1000}s...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+          continue
+        }
+        
+        // Otherwise, break and use fallback
+        console.error("❌ Google Gemini API error:", geminiError)
+        break
       }
-    } catch (hfError) {
-      console.error("❌ Hugging Face API error:", hfError)
-      // Fall through to fallback
     }
 
     // Fallback to extracting first 30 words from clean description
+    console.warn("⚠️ Using fallback: first 30 words")
     const cleanDesc = cleanText(description)
     const words = cleanDesc.split(/\s+/).slice(0, 30)
     return words.join(' ') + (cleanDesc.split(/\s+/).length > 30 ? '...' : '.')
@@ -281,6 +390,7 @@ async function generateSummary(title: string, description: string, url: string):
 /**
  * POST /api/summarize-news
  * Summarize news articles and calculate impact scores
+ * 🎯 SMART CACHING: Only summarize NEW articles, reuse cached summaries
  */
 export async function POST(request: NextRequest) {
   try {
@@ -293,14 +403,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`🤖 Summarizing ${articles.length} articles...`)
+    console.log(`🤖 Processing ${articles.length} articles...`)
+    
+    // 🎯 STEP 1: Separate cached vs new articles
+    const cachedResults: any[] = []
+    const newArticles: any[] = []
+    
+    for (const article of articles) {
+      const cacheKey = article.url || article.id || article.title // Use URL as unique identifier
+      const cached = summaryCache.get(cacheKey)
+      
+      if (cached && cached.timestamp && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+        // ✅ Use cached summary
+        cachedResults.push({
+          id: article.id,
+          summary: cached.summary,
+          affectedStocks: cached.affectedStocks,
+          marketImpactScore: cached.marketImpactScore,
+        })
+      } else {
+        // 🆕 New article - needs summarization
+        newArticles.push(article)
+      }
+    }
+    
+    console.log(`✅ Found ${cachedResults.length} cached summaries`)
+    console.log(`🆕 Need to summarize ${newArticles.length} new articles`)
 
-    // Process articles in parallel (but limit concurrency to avoid rate limits)
+    if (newArticles.length === 0) {
+      console.log(`⚡ All articles cached - instant response!`)
+      return NextResponse.json({
+        success: true,
+        data: cachedResults,
+        cached: true,
+        cacheHitRate: `${cachedResults.length}/${articles.length}`
+      })
+    }
+
+    // 🎯 STEP 2: Process NEW articles with rate limiting (Gemini free tier: 15 RPM)
+    // Process 3 articles at a time with 6-second delays = ~30 requests/minute but with retries = ~10/min safe
     const batchSize = 3
-    const results = []
+    const delayBetweenBatches = 6000 // 6 seconds (safer for rate limits)
+    const newResults: any[] = []
+    
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-    for (let i = 0; i < articles.length; i += batchSize) {
-      const batch = articles.slice(i, i + batchSize)
+    for (let i = 0; i < newArticles.length; i += batchSize) {
+      const batch = newArticles.slice(i, i + batchSize)
+      
+      console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(newArticles.length / batchSize)} (${batch.length} NEW articles)...`)
       
       const batchResults = await Promise.all(
         batch.map(async (article: any) => {
@@ -319,6 +470,15 @@ export async function POST(request: NextRequest) {
               article.description,
               article.sentiment
             )
+            
+            // 🎯 CACHE THE RESULT
+            const cacheKey = article.url || article.id || article.title
+            summaryCache.set(cacheKey, {
+              summary,
+              affectedStocks,
+              marketImpactScore,
+              timestamp: Date.now()
+            })
 
             return {
               id: article.id,
@@ -338,19 +498,31 @@ export async function POST(request: NextRequest) {
         })
       )
 
-      results.push(...batchResults)
+      newResults.push(...batchResults)
 
-      // Small delay between batches to avoid rate limits
-      if (i + batchSize < articles.length) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+      // Rate limit protection: Wait 4 seconds between batches (Gemini free tier: 15 RPM)
+      // This ensures we stay under the limit: 5 requests every 4s = 75 requests/minute → but sequential so ~12/min
+      if (i + batchSize < newArticles.length) {
+        console.log(`⏳ Waiting ${delayBetweenBatches/1000}s before next batch to respect rate limits...`)
+        await sleep(delayBetweenBatches)
       }
     }
+    
+    // 🎯 STEP 3: Combine cached + new results
+    const allResults = [...cachedResults, ...newResults]
 
-    console.log(`✅ Successfully summarized ${results.length} articles`)
+    console.log(`✅ Successfully processed ${allResults.length} articles (${cachedResults.length} cached, ${newResults.length} new)`)
+    console.log(`💾 Cache size: ${summaryCache.size} summaries`)
 
     return NextResponse.json({
       success: true,
-      data: results,
+      data: allResults,
+      stats: {
+        total: allResults.length,
+        cached: cachedResults.length,
+        new: newResults.length,
+        cacheHitRate: `${Math.round((cachedResults.length / allResults.length) * 100)}%`
+      }
     })
   } catch (error: any) {
     console.error("❌ Error in summarize-news API:", error)
