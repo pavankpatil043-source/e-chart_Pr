@@ -566,10 +566,46 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     }
   }, [])
 
-  // Update timeframe ref when timeframe changes
+  // Update timeframe ref and chart formatters when timeframe changes
   useEffect(() => {
     timeframeRef.current = timeframe
     console.log('📅 Timeframe changed to:', timeframe)
+    
+    // Update the chart's time scale formatter
+    if (chartRef.current) {
+      chartRef.current.applyOptions({
+        timeScale: {
+          tickMarkFormatter: (time: any) => {
+            const date = new Date(time * 1000)
+            const tf = timeframe
+            
+            // For very short timeframes (5m, 15m, 30m, 5d), show times
+            const showTime = tf.includes('5m') || tf.includes('15m') || tf.includes('30m') || tf === '5d'
+            
+            if (showTime) {
+              // Show time for intraday - Format: HH:MM in IST
+              const timeStr = date.toLocaleString('en-IN', { 
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+              })
+              // Extract just HH:MM from the string
+              const match = timeStr.match(/(\d{2}):(\d{2})/)
+              return match ? `${match[1]}:${match[2]}` : timeStr
+            } else {
+              // Show date for longer timeframes - Format: MMM DD
+              const dateStr = date.toLocaleString('en-IN', { 
+                timeZone: 'Asia/Kolkata',
+                month: 'short',
+                day: '2-digit'
+              })
+              return dateStr
+            }
+          }
+        }
+      })
+    }
   }, [timeframe])
 
   // Update chart data when chartData changes
