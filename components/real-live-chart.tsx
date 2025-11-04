@@ -402,34 +402,15 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
         rightBarStaysOnScroll: true,
         visible: true,
         tickMarkFormatter: (time: any) => {
-          // Convert to IST using toLocaleString
+          // Like TradingView: X-axis always shows dates (MMM DD format)
+          // Time is only shown in the crosshair tooltip
           const date = new Date(time * 1000)
-          const tf = timeframeRef.current || timeframe
-          
-          // For very short timeframes (5m, 15m, 30m, 5d), show times
-          // For longer timeframes (1h with 2 years data, daily, weekly), show dates
-          const showTime = tf.includes('5m') || tf.includes('15m') || tf.includes('30m') || tf === '5d'
-          
-          if (showTime) {
-            // Show time for intraday - Format: HH:MM in IST
-            const timeStr = date.toLocaleString('en-IN', { 
-              timeZone: 'Asia/Kolkata',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false
-            })
-            // Extract just HH:MM from the string
-            const match = timeStr.match(/(\d{2}):(\d{2})/)
-            return match ? `${match[1]}:${match[2]}` : timeStr
-          } else {
-            // Show date for longer timeframes - Format: MMM DD
-            const dateStr = date.toLocaleString('en-IN', { 
-              timeZone: 'Asia/Kolkata',
-              month: 'short',
-              day: '2-digit'
-            })
-            return dateStr
-          }
+          const dateStr = date.toLocaleString('en-IN', { 
+            timeZone: 'Asia/Kolkata',
+            month: 'short',
+            day: '2-digit'
+          })
+          return dateStr
         },
       },
       localization: {
@@ -577,31 +558,15 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
         timeScale: {
           tickMarkFormatter: (time: any) => {
             const date = new Date(time * 1000)
-            const tf = timeframe
             
-            // For very short timeframes (5m, 15m, 30m, 5d), show times
-            const showTime = tf.includes('5m') || tf.includes('15m') || tf.includes('30m') || tf === '5d'
-            
-            if (showTime) {
-              // Show time for intraday - Format: HH:MM in IST
-              const timeStr = date.toLocaleString('en-IN', { 
-                timeZone: 'Asia/Kolkata',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-              })
-              // Extract just HH:MM from the string
-              const match = timeStr.match(/(\d{2}):(\d{2})/)
-              return match ? `${match[1]}:${match[2]}` : timeStr
-            } else {
-              // Show date for longer timeframes - Format: MMM DD
-              const dateStr = date.toLocaleString('en-IN', { 
-                timeZone: 'Asia/Kolkata',
-                month: 'short',
-                day: '2-digit'
-              })
-              return dateStr
-            }
+            // Like TradingView: Always show dates on X-axis (MMM DD format)
+            // Time is only shown in the crosshair tooltip
+            const dateStr = date.toLocaleString('en-IN', { 
+              timeZone: 'Asia/Kolkata',
+              month: 'short',
+              day: '2-digit'
+            })
+            return dateStr
           }
         }
       })
