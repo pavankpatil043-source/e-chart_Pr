@@ -125,19 +125,25 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
     setLoading(true)
     try {
       // Fetch last 4 days of historical news
-      let response = await fetch(`/api/live-indian-news?category=${selectedCategory}&sentiment=${selectedSentiment}&days=4`, {
+      // Add timestamp to force fresh data and bypass ALL caching layers
+      const timestamp = Date.now()
+      let response = await fetch(`/api/live-indian-news?category=${selectedCategory}&sentiment=${selectedSentiment}&days=4&_t=${timestamp}`, {
         cache: "no-store",
         headers: {
-          "Cache-Control": "no-cache",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
         },
       })
       
       // Fallback to original API if needed
       if (!response.ok) {
-        response = await fetch(`/api/financial-news?category=${selectedCategory}&sentiment=${selectedSentiment}`, {
+        response = await fetch(`/api/financial-news?category=${selectedCategory}&sentiment=${selectedSentiment}&_t=${timestamp}`, {
           cache: "no-store",
           headers: {
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
           },
         })
       }
