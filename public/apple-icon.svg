@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <!-- Background -->
+  <rect width="180" height="180" rx="40" fill="#0f172a"/>
+  
+  <!-- Candlestick Chart Icon (Larger) -->
+  <!-- Green candle 1 -->
+  <rect x="30" y="75" width="18" height="48" fill="#10b981" rx="3"/>
+  <line x1="39" y1="60" x2="39" y2="132" stroke="#10b981" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Red candle 2 -->
+  <rect x="60" y="54" width="18" height="36" fill="#ef4444" rx="3"/>
+  <line x1="69" y1="42" x2="69" y2="99" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Green candle 3 -->
+  <rect x="90" y="66" width="18" height="60" fill="#10b981" rx="3"/>
+  <line x1="99" y1="48" x2="99" y2="135" stroke="#10b981" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Red candle 4 -->
+  <rect x="120" y="42" width="18" height="42" fill="#ef4444" rx="3"/>
+  <line x1="129" y1="30" x2="129" y2="93" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Trend line (upward) -->
+  <path d="M 25 120 Q 65 95, 105 80 T 145 55" stroke="#3b82f6" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
+  
+  <!-- Chart text/label -->
+  <text x="90" y="160" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#60a5fa" text-anchor="middle">ECHART</text>
+</svg>

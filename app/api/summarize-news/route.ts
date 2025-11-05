@@ -388,9 +388,69 @@ async function generateSummary(title: string, description: string, url: string):
 }
 
 /**
+ * Helper function to process a batch of articles
+ * Used to avoid code duplication
+ */
+async function processArticleBatch(articlesToProcess: any[]): Promise<any[]> {
+  const batchSize = 5
+  const delayBetweenBatches = 3000
+  const results: any[] = []
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+  for (let i = 0; i < articlesToProcess.length; i += batchSize) {
+    const batch = articlesToProcess.slice(i, i + batchSize)
+    
+    console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(articlesToProcess.length / batchSize)} (${batch.length} articles)...`)
+    
+    const batchResults = await Promise.all(
+      batch.map(async (article: any) => {
+        try {
+          const summary = await generateSummary(article.title, article.description, article.url)
+          const affectedStocks = detectAffectedStocks(`${article.title} ${article.description}`)
+          const marketImpactScore = calculateMarketImpact(article.title, article.description, article.sentiment)
+          
+          // Cache the result
+          const cacheKey = article.url || article.id || article.title
+          summaryCache.set(cacheKey, {
+            summary,
+            affectedStocks,
+            marketImpactScore,
+            timestamp: Date.now()
+          })
+
+          return { id: article.id, summary, affectedStocks, marketImpactScore }
+        } catch (error) {
+          console.error(`❌ Error processing article ${article.id}:`, error)
+          return {
+            id: article.id,
+            summary: article.description.substring(0, 150) + "...",
+            affectedStocks: [],
+            marketImpactScore: 40,
+          }
+        }
+      })
+    )
+
+    results.push(...batchResults)
+
+    if (i + batchSize < articlesToProcess.length) {
+      console.log(`⏳ Waiting ${delayBetweenBatches/1000}s before next batch...`)
+      await sleep(delayBetweenBatches)
+    }
+  }
+
+  return results
+}
+
+// ⏱️ Vercel serverless function timeout (max 60s on free tier)
+// If you have Pro plan, you can increase to 300s
+export const maxDuration = 60 // seconds
+
+/**
  * POST /api/summarize-news
  * Summarize news articles and calculate impact scores
  * 🎯 SMART CACHING: Only summarize NEW articles, reuse cached summaries
+ * ⚡ OPTIMIZED: Returns cached articles immediately to avoid 504 timeout
  */
 export async function POST(request: NextRequest) {
   try {
@@ -440,73 +500,30 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 🎯 STEP 2: Process NEW articles with rate limiting (Gemini free tier: 15 RPM)
-    // Process 3 articles at a time with 6-second delays = ~30 requests/minute but with retries = ~10/min safe
-    const batchSize = 3
-    const delayBetweenBatches = 6000 // 6 seconds (safer for rate limits)
-    const newResults: any[] = []
-    
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-
-    for (let i = 0; i < newArticles.length; i += batchSize) {
-      const batch = newArticles.slice(i, i + batchSize)
+    // ⚡ If we have cached articles, return them immediately to avoid timeout
+    // Then process new articles in smaller batches
+    if (cachedResults.length > 0 && newArticles.length > 20) {
+      console.log(`⚡ Too many new articles (${newArticles.length}) - returning cached articles first to avoid timeout`)
       
-      console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(newArticles.length / batchSize)} (${batch.length} NEW articles)...`)
+      // Process only first 10 new articles to stay within 60s timeout
+      const limitedNewArticles = newArticles.slice(0, 10)
+      console.log(`⏱️ Processing only first ${limitedNewArticles.length} articles to avoid timeout`)
       
-      const batchResults = await Promise.all(
-        batch.map(async (article: any) => {
-          try {
-            // Generate summary (30 words)
-            const summary = await generateSummary(article.title, article.description, article.url)
-            
-            // Detect affected stocks
-            const affectedStocks = detectAffectedStocks(
-              `${article.title} ${article.description}`
-            )
-            
-            // Calculate market impact score
-            const marketImpactScore = calculateMarketImpact(
-              article.title,
-              article.description,
-              article.sentiment
-            )
-            
-            // 🎯 CACHE THE RESULT
-            const cacheKey = article.url || article.id || article.title
-            summaryCache.set(cacheKey, {
-              summary,
-              affectedStocks,
-              marketImpactScore,
-              timestamp: Date.now()
-            })
-
-            return {
-              id: article.id,
-              summary,
-              affectedStocks,
-              marketImpactScore,
-            }
-          } catch (error) {
-            console.error(`❌ Error processing article ${article.id}:`, error)
-            return {
-              id: article.id,
-              summary: article.description.substring(0, 150) + "...",
-              affectedStocks: [],
-              marketImpactScore: 40,
-            }
-          }
-        })
-      )
-
-      newResults.push(...batchResults)
-
-      // Rate limit protection: Wait 4 seconds between batches (Gemini free tier: 15 RPM)
-      // This ensures we stay under the limit: 5 requests every 4s = 75 requests/minute → but sequential so ~12/min
-      if (i + batchSize < newArticles.length) {
-        console.log(`⏳ Waiting ${delayBetweenBatches/1000}s before next batch to respect rate limits...`)
-        await sleep(delayBetweenBatches)
-      }
+      // Process limited articles
+      const quickResults = await processArticleBatch(limitedNewArticles)
+      
+      return NextResponse.json({
+        success: true,
+        data: [...cachedResults, ...quickResults],
+        cached: false,
+        cacheHitRate: `${cachedResults.length}/${articles.length}`,
+        note: `Processed ${limitedNewArticles.length}/${newArticles.length} new articles (remaining will be cached on next request)`
+      })
     }
+
+    // 🎯 STEP 2: Process ALL NEW articles
+    console.log(`� Processing all ${newArticles.length} new articles...`)
+    const newResults = await processArticleBatch(newArticles)
     
     // 🎯 STEP 3: Combine cached + new results
     const allResults = [...cachedResults, ...newResults]
