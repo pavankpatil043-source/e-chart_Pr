@@ -229,12 +229,65 @@ async function fetchArticleContent(url: string, fallbackDescription: string): Pr
 }
 
 /**
- * Generate a concise 30-word summary using Google Gemini Flash AI
+ * Smart fallback summary when AI is unavailable
+ * Intelligently extracts key information without AI
+ */
+function generateSmartFallbackSummary(title: string, description: string): string {
+  const cleanTitle = cleanText(title)
+  const cleanDesc = cleanText(description)
+  
+  // Strategy 1: If title is descriptive enough (>10 words), use it + first line of description
+  const titleWords = cleanTitle.split(/\s+/)
+  if (titleWords.length >= 10 && titleWords.length <= 30) {
+    // Title is already a good summary
+    return cleanTitle + (cleanTitle.endsWith('.') ? '' : '.')
+  }
+  
+  // Strategy 2: Combine title + key sentences from description
+  // Look for first sentence that contains important keywords
+  const sentences = cleanDesc.split(/[.!?]+/).filter(s => s.trim().length > 0)
+  const importantKeywords = [
+    'announce', 'launch', 'report', 'surge', 'fall', 'rise', 'drop',
+    'increase', 'decrease', 'profit', 'loss', 'revenue', 'growth',
+    'billion', 'million', 'percent', '%', 'quarter', 'year',
+    'market', 'stock', 'share', 'price', 'plan', 'deal', 'agreement'
+  ]
+  
+  let bestSentence = sentences[0] || cleanDesc.substring(0, 100)
+  for (const sentence of sentences.slice(0, 3)) {
+    const lowerSentence = sentence.toLowerCase()
+    const keywordCount = importantKeywords.filter(kw => lowerSentence.includes(kw)).length
+    if (keywordCount >= 2) {
+      bestSentence = sentence
+      break
+    }
+  }
+  
+  // Combine title + best sentence
+  const combined = `${cleanTitle}. ${bestSentence.trim()}`.trim()
+  const words = combined.split(/\s+/)
+  
+  // Trim to ~30 words at sentence boundary
+  if (words.length > 32) {
+    const first30 = words.slice(0, 30).join(' ')
+    const lastPeriod = first30.lastIndexOf('.')
+    if (lastPeriod > 20) {
+      return first30.substring(0, lastPeriod + 1).trim()
+    }
+    return first30.trim() + '.'
+  }
+  
+  return combined + (combined.endsWith('.') || combined.endsWith('!') || combined.endsWith('?') ? '' : '.')
+}
+
+/**
+ * Generate a crisp, professional 25-30 word summary using Google Gemini Flash AI
  */
 /**
  * Generate AI summary with automatic retry on rate limit
+ * Returns object with summary text and type (ai/fallback)
  */
-async function generateSummary(title: string, description: string, url: string): Promise<string> {
+async function generateSummary(title: string, description: string, url: string): Promise<{ text: string, type: 'ai' | 'fallback' }> {
   try {
     // Clean inputs first
     const cleanTitle = cleanText(title)
@@ -246,24 +299,30 @@ async function generateSummary(title: string, description: string, url: string):
     
     // Skip if text is too short
     if (text.length < 100) {
-      return cleanDescription.substring(0, 150) + (cleanDescription.length > 150 ? "..." : "")
+      return {
+        text: cleanDescription.substring(0, 150) + (cleanDescription.length > 150 ? "..." : ""),
+        type: 'fallback'
+      }
     }
 
     console.log(`🤖 Summarizing article (${text.length} chars) to 30 words with Gemini Flash...`)
 
     // Check if daily quota exceeded
     if (dailyQuotaExceeded && Date.now() < quotaResetTime) {
-      console.warn(`⚠️ Daily quota exceeded, using fallback until ${new Date(quotaResetTime).toISOString()}`)
-      const words = cleanDescription.split(/\s+/).slice(0, 30)
-      return words.join(' ') + (cleanDescription.split(/\s+/).length > 30 ? '...' : '.')
+      console.warn(`⚠️ Daily quota exceeded, using smart fallback until ${new Date(quotaResetTime).toISOString()}`)
+      return {
+        text: generateSmartFallbackSummary(title, description),
+        type: 'fallback'
+      }
     }
 
     // Check if Gemini is configured
     if (!isGeminiConfigured) {
-      console.warn("⚠️ Google Gemini API key not configured, using fallback summary")
-      // Fallback: Extract first 30 words from clean description
-      const words = cleanDescription.split(/\s+/).slice(0, 30)
-      return words.join(' ') + (cleanDescription.split(/\s+/).length > 30 ? '...' : '.')
+      console.warn("⚠️ Google Gemini API key not configured, using smart fallback summary")
+      return {
+        text: generateSmartFallbackSummary(title, description),
+        type: 'fallback'
+      }
     }
 
     console.log("✅ Google Gemini API key detected, attempting AI summarization...")
@@ -287,12 +346,26 @@ async function generateSummary(title: string, description: string, url: string):
             body: JSON.stringify({
               contents: [{
                 parts: [{
-                  text: `Summarize this in exactly 30 words: ${cleanTitle}. ${text.substring(0, 500)}`
+                  text: `You are a financial news summarizer. Create a crisp, professional summary of this news article.
+
+RULES:
+- Write EXACTLY 25-30 words (strict limit)
+- Use clear, concise language
+- Focus on key facts: who, what, impact
+- End with a complete sentence (no trailing "...")
+- No fluff words or unnecessary details
+
+Article Title: ${cleanTitle}
+Article Text: ${text.substring(0, 600)}
+
+Your 25-30 word summary:`
                 }]
               }],
               generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 60,
+                temperature: 0.2,
+                maxOutputTokens: 80,
+                topP: 0.8,
+                topK: 40
               }
             })
           }),
@@ -338,18 +411,42 @@ async function generateSummary(title: string, description: string, url: string):
         const data = await response.json()
       
         if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-          const summary = cleanText(data.candidates[0].content.parts[0].text)
+          let summary = cleanText(data.candidates[0].content.parts[0].text)
           
-          // Post-process to ensure ~30 words
-          const words = summary.split(/\s+/)
-          if (words.length > 35) {
-            // Trim to 30 words
-            const trimmed = words.slice(0, 30).join(' ')
-            return trimmed + (trimmed.endsWith('.') ? '' : '...')
+          // Remove common AI response prefixes
+          summary = summary
+            .replace(/^(Here's|Here is|This is|The summary is:?)\s*/i, '')
+            .replace(/^Summary:?\s*/i, '')
+            .trim()
+          
+          // Count words
+          const words = summary.split(/\s+/).filter(w => w.length > 0)
+          const wordCount = words.length
+          
+          // If too long, intelligently trim to ~30 words at sentence boundary
+          if (wordCount > 32) {
+            // Try to find last period before word 30
+            const first30Words = words.slice(0, 30).join(' ')
+            const lastPeriod = first30Words.lastIndexOf('.')
+            
+            if (lastPeriod > 20) {
+              // End at the last complete sentence within ~30 words
+              summary = first30Words.substring(0, lastPeriod + 1).trim()
+            } else {
+              // No period found, just trim to 30 words and add period
+              summary = first30Words.trim()
+              if (!summary.endsWith('.')) {
+                summary += '.'
+              }
+            }
+          } else if (!summary.endsWith('.') && !summary.endsWith('!') && !summary.endsWith('?')) {
+            // Ensure summary ends with proper punctuation
+            summary += '.'
           }
           
-          console.log(`✅ Gemini summary generated: ${words.length} words`)
-          return summary
+          const finalWordCount = summary.split(/\s+/).filter(w => w.length > 0).length
+          console.log(`✅ Gemini summary: ${finalWordCount} words - "${summary.substring(0, 50)}..."`)
+          return { text: summary, type: 'ai' }
         }
         
         // No valid response, use fallback
@@ -372,18 +469,14 @@ async function generateSummary(title: string, description: string, url: string):
       }
     }
 
-    // Fallback to extracting first 30 words from clean description
-    console.warn("⚠️ Using fallback: first 30 words")
-    const cleanDesc = cleanText(description)
-    const words = cleanDesc.split(/\s+/).slice(0, 30)
-    return words.join(' ') + (cleanDesc.split(/\s+/).length > 30 ? '...' : '.')
+    // Fallback to smart extraction
+    console.warn("⚠️ AI unavailable, using smart fallback summary")
+    return { text: generateSmartFallbackSummary(title, description), type: 'fallback' }
   } catch (error) {
     console.error("❌ Summarization error:", error)
     
-    // Final fallback: Extract first 30 words from clean description
-    const cleanDesc = cleanText(description)
-    const words = cleanDesc.split(/\s+/).slice(0, 30)
-    return words.join(' ') + (cleanDesc.split(/\s+/).length > 30 ? '...' : '.')
+    // Final fallback: Smart extraction
+    return { text: generateSmartFallbackSummary(title, description), type: 'fallback' }
   }
 }
 
@@ -405,20 +498,27 @@ async function processArticleBatch(articlesToProcess: any[]): Promise<any[]> {
     const batchResults = await Promise.all(
       batch.map(async (article: any) => {
         try {
-          const summary = await generateSummary(article.title, article.description, article.url)
+          const summaryResult = await generateSummary(article.title, article.description, article.url)
           const affectedStocks = detectAffectedStocks(`${article.title} ${article.description}`)
           const marketImpactScore = calculateMarketImpact(article.title, article.description, article.sentiment)
           
           // Cache the result
           const cacheKey = article.url || article.id || article.title
           summaryCache.set(cacheKey, {
-            summary,
+            summary: summaryResult.text,
             affectedStocks,
             marketImpactScore,
             timestamp: Date.now()
           })
 
-          return { id: article.id, summary, affectedStocks, marketImpactScore }
+                    
+          return { 
+            id: article.id, 
+            summary: summaryResult.text, 
+            summaryType: summaryResult.type,
+            affectedStocks, 
+            marketImpactScore 
+          }
         } catch (error) {
           console.error(`❌ Error processing article ${article.id}:`, error)
           return {

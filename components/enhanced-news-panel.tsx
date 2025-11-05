@@ -41,10 +41,51 @@ interface NewsArticle {
   imageUrl?: string
   author?: string
   summary?: string
+  summaryType?: 'ai' | 'fallback' // Track if AI-generated or fallback
   marketImpactScore?: number
   affectedStocks?: string[]
   expanded?: boolean
   summarizing?: boolean
+}
+
+// Helper function to clean HTML and create instant preview
+function cleanTextForPreview(text: string): string {
+  if (!text) return ""
+  
+  return text
+    .replace(/<[^>]*>/g, " ") // Remove HTML tags
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/https?:\/\/[^\s]+/g, "") // Remove URLs
+    .replace(/\s+/g, " ") // Normalize spaces
+    .trim()
+}
+
+// Helper function to create instant smart summary
+function createInstantSummary(title: string, description: string): string {
+  const cleanTitle = cleanTextForPreview(title)
+  const cleanDesc = cleanTextForPreview(description)
+  
+  // If title is good (10-30 words), use it
+  const titleWords = cleanTitle.split(/\s+/)
+  if (titleWords.length >= 10 && titleWords.length <= 35) {
+    return cleanTitle + (cleanTitle.endsWith('.') ? '' : '.')
+  }
+  
+  // Otherwise combine title + first sentence
+  const firstSentence = cleanDesc.split(/[.!?]/)[0] || cleanDesc.substring(0, 100)
+  const combined = `${cleanTitle}. ${firstSentence}`.trim()
+  const words = combined.split(/\s+/)
+  
+  if (words.length > 35) {
+    return words.slice(0, 32).join(' ') + '...'
+  }
+  
+  return combined + (combined.endsWith('.') ? '' : '.')
 }
 
 // Helper function to check if article is related to a stock
@@ -127,8 +168,8 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
           setDateRange(data.metadata?.dateRange || data.dateRange)
         }
         
-        // Automatically summarize articles
-        summarizeArticles(filtered)
+        // SMART STRATEGY: Show instant fallback, then upgrade to AI in background
+        summarizeArticlesWithFallback(filtered)
       }
     } catch (error) {
       console.error("Error fetching news:", error)
@@ -137,57 +178,114 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
     }
   }, [selectedCategory, selectedSentiment])
 
-  // Summarize articles using AI
-  const summarizeArticles = useCallback(async (articlesToSummarize: NewsArticle[]) => {
+  // SMART SUMMARIZATION: Instant fallback → Background AI upgrade
+  const summarizeArticlesWithFallback = useCallback(async (articlesToSummarize: NewsArticle[]) => {
     try {
-      console.log("🤖 Starting AI summarization for", articlesToSummarize.length, "articles...")
+      console.log("🚀 FAST TRACK: Showing instant fallback summaries...")
       
-      const response = await fetch("/api/summarize-news", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles: articlesToSummarize }),
-      })
+      // STEP 1: Immediately show client-side smart summaries (0ms latency)
+      const articlesWithFallback = articlesToSummarize.map(article => ({
+        ...article,
+        summary: createInstantSummary(article.title, article.description),
+        summaryType: 'fallback' as const,
+      }))
+      
+      // Update UI immediately with fallback summaries
+      setArticles((prev) =>
+        prev.map((article) => {
+          const fallback = articlesWithFallback.find(a => a.id === article.id)
+          return fallback || article
+        })
+      )
+      
+      setFilteredArticles((prev) =>
+        prev.map((article) => {
+          const fallback = articlesWithFallback.find(a => a.id === article.id)
+          return fallback || article
+        })
+      )
+      
+      console.log("✅ Instant fallback summaries shown to user")
+      
+      // STEP 2: Start AI summarization in background with 2-second timeout
+      console.log("🤖 Starting background AI upgrade (30s timeout)...")
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        console.log("⏱️ AI timeout reached, keeping fallback summaries")
+        controller.abort()
+      }, 30000) // 30 second timeout for AI
+      
+      try {
+        const response = await fetch("/api/summarize-news", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articles: articlesToSummarize }),
+          signal: controller.signal,
+        })
 
-      const data = await response.json()
+        clearTimeout(timeoutId)
+        const data = await response.json()
 
-      if (data.success) {
-        console.log("✅ AI summarization complete:", data.data.length, "summaries")
-        
-        // Update articles with summaries
-        setArticles((prev) =>
-          prev.map((article) => {
-            const summary = data.data.find((s: any) => s.id === article.id)
-            if (summary) {
-              return {
-                ...article,
-                summary: summary.summary,
-                marketImpactScore: summary.marketImpactScore,
-                affectedStocks: summary.affectedStocks,
+        if (data.success && data.data.length > 0) {
+          console.log("✅ AI upgrade complete! Replacing", data.data.length, "summaries")
+          
+          // STEP 3: Smoothly upgrade fallback → AI summaries
+          setArticles((prev) =>
+            prev.map((article) => {
+              const aiSummary = data.data.find((s: any) => s.id === article.id)
+              if (aiSummary && aiSummary.summaryType === 'ai') {
+                // Only upgrade if AI summary is actually better
+                return {
+                  ...article,
+                  summary: aiSummary.summary,
+                  summaryType: aiSummary.summaryType,
+                  marketImpactScore: aiSummary.marketImpactScore,
+                  affectedStocks: aiSummary.affectedStocks,
+                }
               }
-            }
-            return article
-          })
-        )
-        
-        setFilteredArticles((prev) =>
-          prev.map((article) => {
-            const summary = data.data.find((s: any) => s.id === article.id)
-            if (summary) {
-              return {
-                ...article,
-                summary: summary.summary,
-                marketImpactScore: summary.marketImpactScore,
-                affectedStocks: summary.affectedStocks,
+              return article // Keep fallback if AI didn't improve it
+            })
+          )
+          
+          setFilteredArticles((prev) =>
+            prev.map((article) => {
+              const aiSummary = data.data.find((s: any) => s.id === article.id)
+              if (aiSummary && aiSummary.summaryType === 'ai') {
+                return {
+                  ...article,
+                  summary: aiSummary.summary,
+                  summaryType: aiSummary.summaryType,
+                  marketImpactScore: aiSummary.marketImpactScore,
+                  affectedStocks: aiSummary.affectedStocks,
+                }
               }
-            }
-            return article
-          })
-        )
+              return article
+            })
+          )
+          
+          console.log("🎉 UI upgraded with AI summaries!")
+        } else {
+          console.log("ℹ️ No AI summaries available, keeping fallback")
+        }
+      } catch (fetchError: any) {
+        if (fetchError.name === 'AbortError') {
+          console.log("⏱️ AI summarization timed out, fallback summaries remain")
+        } else {
+          console.error("❌ AI summarization failed:", fetchError)
+          console.log("ℹ️ Fallback summaries are still displayed")
+        }
       }
+      
     } catch (error) {
-      console.error("❌ Error summarizing articles:", error)
+      console.error("❌ Summarization error:", error)
     }
   }, [])
+
+  // Legacy function kept for compatibility (now just calls new smart function)
+  const summarizeArticles = useCallback(async (articlesToSummarize: NewsArticle[]) => {
+    return summarizeArticlesWithFallback(articlesToSummarize)
+  }, [summarizeArticlesWithFallback])
 
   // Toggle expand/collapse for article
   const toggleExpand = (articleId: string) => {
@@ -518,21 +616,40 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
                       </Button>
                     </div>
 
-                    {/* AI Summary or Description */}
+                    {/* Summary Display - Always shows (instant fallback → AI upgrade) */}
                     {article.summary ? (
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-1.5">
-                          <Sparkles className="h-3 w-3 text-purple-400" />
-                          <span className="text-[10px] font-semibold text-purple-400">AI Summary (30 words)</span>
+                          <Sparkles className={`h-3 w-3 ${article.summaryType === 'ai' ? 'text-purple-400' : 'text-blue-400'}`} />
+                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+                            article.summaryType === 'ai' ? 'text-purple-400' : 'text-blue-400'
+                          }`}>
+                            {article.summaryType === 'ai' ? 'AI SUMMARY' : 'SMART SUMMARY'}
+                          </span>
                         </div>
-                        <p className="text-xs text-white/80 leading-relaxed bg-purple-500/10 border border-purple-500/20 rounded-lg p-2">
+                        <p className={`text-xs text-white/90 leading-relaxed rounded-lg p-2.5 shadow-sm transition-all duration-300 ${
+                          article.summaryType === 'ai' 
+                            ? 'bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/30'
+                            : 'bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30'
+                        }`}>
                           {article.summary}
                         </p>
                       </div>
                     ) : (
-                      <p className="text-xs text-white/60 line-clamp-2 leading-relaxed">
-                        {article.description}
-                      </p>
+                      /* Rare case: News just loaded, instant fallback not yet applied */
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <RefreshCw className="h-3 w-3 text-blue-400 animate-spin" />
+                          <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wide">
+                            Loading Summary...
+                          </span>
+                        </div>
+                        <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-lg p-2.5 shadow-sm">
+                          <p className="text-xs text-white/75 leading-relaxed italic">
+                            {createInstantSummary(article.title, article.description)}
+                          </p>
+                        </div>
+                      </div>
                     )}
 
                     {/* Market Impact & Affected Stocks */}
@@ -588,8 +705,8 @@ export function EnhancedNewsPanel({ stockSymbol }: EnhancedNewsPanelProps = {}) 
                     {/* Full Description (Expanded) */}
                     {article.expanded && (
                       <div className="pt-2 border-t border-white/10">
-                        <p className="text-xs text-white/60 leading-relaxed">
-                          {article.description}
+                        <p className="text-xs text-white/70 leading-relaxed">
+                          {cleanTextForPreview(article.description)}
                         </p>
                       </div>
                     )}
