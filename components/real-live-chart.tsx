@@ -717,6 +717,20 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       volume: liveData.volume
     })
     
+    // CRITICAL: Check if chartData exists and get last candle time
+    if (chartData && chartData.length > 0) {
+      const lastChartCandle = chartData[chartData.length - 1]
+      const lastChartTime = Math.floor(lastChartCandle.timestamp / 1000)
+      
+      // Only update if roundedTime is >= last chart candle time
+      if (roundedTime < lastChartTime) {
+        console.log(`⏭️ Skipping update: roundedTime (${roundedTime}) < lastChartTime (${lastChartTime})`)
+        console.log(`   Live: ${new Date(roundedTime * 1000).toLocaleTimeString()}`)
+        console.log(`   Chart last: ${new Date(lastChartTime * 1000).toLocaleTimeString()}`)
+        return
+      }
+    }
+    
     // Update the last candle with live data using rounded time
     const lastCandle = {
       time: roundedTime as any,
