@@ -693,10 +693,23 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     }
 
     console.log(`📊 Live price update: ${liveData.symbol} @ ₹${liveData.price.toFixed(2)}`)
+    
+    // Get candle interval in minutes
+    let intervalMinutes = 5 // default
+    if (timeframe === '1d-15m') intervalMinutes = 15
+    else if (timeframe === '1d-30m') intervalMinutes = 30
+    else if (timeframe === '1d-1h') intervalMinutes = 60
+    
+    // Round timestamp to candle interval (align to 5min, 15min, 30min, or 1hr boundaries)
+    const timestampSeconds = Math.floor(liveData.timestamp / 1000)
+    const intervalSeconds = intervalMinutes * 60
+    const roundedTime = Math.floor(timestampSeconds / intervalSeconds) * intervalSeconds
+    
     console.log(`📊 Candle data:`, {
-      time: new Date(liveData.timestamp).toLocaleString(),
-      timestamp: liveData.timestamp,
-      timestampSeconds: Math.floor(liveData.timestamp / 1000),
+      time: new Date(roundedTime * 1000).toLocaleString(),
+      originalTimestamp: liveData.timestamp,
+      roundedTimestamp: roundedTime,
+      interval: `${intervalMinutes}min`,
       open: liveData.open,
       high: liveData.high,
       low: liveData.low,
@@ -704,9 +717,9 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       volume: liveData.volume
     })
     
-    // Update the last candle with live data
+    // Update the last candle with live data using rounded time
     const lastCandle = {
-      time: Math.floor(liveData.timestamp / 1000) as any,
+      time: roundedTime as any,
       open: liveData.open,
       high: liveData.high,
       low: liveData.low,
@@ -721,7 +734,7 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       if (volumeSeriesRef.current) {
         const volumeColor = liveData.price >= liveData.open ? '#10b98180' : '#ef444480'
         volumeSeriesRef.current.update({
-          time: Math.floor(liveData.timestamp / 1000) as any,
+          time: roundedTime as any,
           value: liveData.volume,
           color: volumeColor,
         })
@@ -744,9 +757,9 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       volume: liveData.volume
     })
 
-    // Update stockData with latest live prices
-    setStockData(prev => prev ? {
-      ...prev,
+    // CRITICAL FIX: Always create stockData, even if prev is null
+    setStockData(prev => ({
+      symbol: liveData.symbol,
       price: liveData.price,
       change: liveData.change,
       changePercent: liveData.changePercent,
@@ -754,7 +767,11 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       low: liveData.low,
       open: liveData.open,
       volume: liveData.volume,
-    } : null)
+      previousClose: liveData.previousClose,
+      companyName: prev?.companyName || liveData.symbol,
+      sector: prev?.sector || 'Unknown',
+      source: prev?.source || 'Live Stream'
+    }))
 
     // Notify parent component of price update
     if (onDataUpdate) {
