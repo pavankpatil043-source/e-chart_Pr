@@ -532,23 +532,48 @@ export async function GET(request: NextRequest) {
     
     const patterns: PatternMatch[] = []
     
-    // Detect all patterns
-    const headShoulders = detectHeadAndShoulders(candles)
-    if (headShoulders) patterns.push(headShoulders)
+    // Detect all patterns with error handling
+    try {
+      const headShoulders = detectHeadAndShoulders(candles)
+      if (headShoulders) patterns.push(headShoulders)
+    } catch (err) {
+      console.error('Error detecting Head & Shoulders:', err)
+    }
     
-    const doublePattern = detectDoubleTopBottom(candles)
-    if (doublePattern) patterns.push(doublePattern)
+    try {
+      const doublePattern = detectDoubleTopBottom(candles)
+      if (doublePattern) patterns.push(doublePattern)
+    } catch (err) {
+      console.error('Error detecting Double Top/Bottom:', err)
+    }
     
-    const triangle = detectTriangle(candles)
-    if (triangle) patterns.push(triangle)
+    try {
+      const triangle = detectTriangle(candles)
+      if (triangle) patterns.push(triangle)
+    } catch (err) {
+      console.error('Error detecting Triangle:', err)
+    }
     
-    const flag = detectFlagPennant(candles)
-    if (flag) patterns.push(flag)
+    try {
+      const flag = detectFlagPennant(candles)
+      if (flag) patterns.push(flag)
+    } catch (err) {
+      console.error('Error detecting Flag/Pennant:', err)
+    }
     
-    patterns.push(...detectCandlestickPatterns(candles))
+    try {
+      patterns.push(...detectCandlestickPatterns(candles))
+    } catch (err) {
+      console.error('Error detecting Candlestick patterns:', err)
+    }
     
     // Opening analysis
-    const openingAnalysis = analyzeOpening(candles)
+    let openingAnalysis = null
+    try {
+      openingAnalysis = analyzeOpening(candles)
+    } catch (err) {
+      console.error('Error analyzing opening:', err)
+    }
     
     // Generate signal
     const overallSignal = generateOverallSignal(patterns)
@@ -600,11 +625,16 @@ export async function GET(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('Error in pattern recognition:', error)
+    console.error('❌ Error in pattern recognition:', error)
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    })
     
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : String(error)) : undefined
     }, { status: 500 })
   }
 }

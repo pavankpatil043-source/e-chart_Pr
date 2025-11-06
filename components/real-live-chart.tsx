@@ -646,9 +646,17 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
   useEffect(() => {
     if (!liveData || !candlestickSeriesRef.current || !isLiveConnected) return
     
-    // Only update if we're on an intraday timeframe (5m, 15m, 30m)
-    const isIntradayTimeframe = timeframe.includes('5m') || timeframe.includes('15m') || timeframe.includes('30m')
-    if (!isIntradayTimeframe) return
+    // Only update on intraday timeframes (5m, 15m, 30m, 1h)
+    // Prevents "Cannot update oldest data" error on daily/weekly charts
+    const isIntradayTimeframe = timeframe.includes('5m') || 
+                                timeframe.includes('15m') || 
+                                timeframe.includes('30m') ||
+                                timeframe.includes('1h')
+    
+    if (!isIntradayTimeframe) {
+      console.log(`⏭️ Skipping live update on ${timeframe} (not intraday)`)
+      return
+    }
 
     console.log(`📊 Live price update: ${liveData.symbol} @ ₹${liveData.price.toFixed(2)}`)
     
