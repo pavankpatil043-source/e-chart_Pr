@@ -579,7 +579,18 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
 
   // Update chart data when chartData changes
   useEffect(() => {
-    if (!candlestickSeriesRef.current || !volumeSeriesRef.current || chartData.length === 0) return
+    if (!candlestickSeriesRef.current || !volumeSeriesRef.current) {
+      console.log('⚠️ Chart series not initialized yet')
+      return
+    }
+    
+    if (chartData.length === 0) {
+      console.log('⚠️ No chart data to display')
+      // Clear the chart when no data
+      candlestickSeriesRef.current.setData([])
+      volumeSeriesRef.current.setData([])
+      return
+    }
 
     console.log(`📊 Updating chart with ${chartData.length} data points`)
 
@@ -616,8 +627,15 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     })
     console.log(`📊 Total candles being set:`, formattedCandleData.length)
 
-    candlestickSeriesRef.current.setData(formattedCandleData)
-    volumeSeriesRef.current.setData(formattedVolumeData)
+    // Set data with error handling
+    try {
+      candlestickSeriesRef.current.setData(formattedCandleData)
+      volumeSeriesRef.current.setData(formattedVolumeData)
+      console.log('✅ Chart data set successfully')
+    } catch (error) {
+      console.error('❌ Error setting chart data:', error)
+      return
+    }
 
     // Add support/resistance markers
     if (srLevels.length > 0 && chartRef.current) {
@@ -633,18 +651,32 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
       })
     }
 
-    // Fit content to view
-    if (chartRef.current && formattedCandleData.length > 0) {
-      chartRef.current.timeScale().fitContent()
-    }
-    if (volumeChartRef.current && formattedVolumeData.length > 0) {
-      volumeChartRef.current.timeScale().fitContent()
-    }
+    // Fit content to view after a short delay to ensure rendering is complete
+    setTimeout(() => {
+      if (chartRef.current && formattedCandleData.length > 0) {
+        chartRef.current.timeScale().fitContent()
+        console.log('✅ Chart fitted to content')
+      }
+      if (volumeChartRef.current && formattedVolumeData.length > 0) {
+        volumeChartRef.current.timeScale().fitContent()
+      }
+    }, 100)
   }, [chartData, srLevels])
 
   // Update chart with live price data
   useEffect(() => {
-    if (!liveData || !candlestickSeriesRef.current || !isLiveConnected) return
+    console.log('🔍 Live update effect triggered:', {
+      hasLiveData: !!liveData,
+      hasCandlestickSeries: !!candlestickSeriesRef.current,
+      isConnected: isLiveConnected,
+      timeframe,
+      liveDataPrice: liveData?.price
+    })
+    
+    if (!liveData || !candlestickSeriesRef.current || !isLiveConnected) {
+      console.log('⚠️ Skipping update - missing requirements')
+      return
+    }
     
     // Only update on intraday timeframes (5m, 15m, 30m, 1h)
     // Prevents "Cannot update oldest data" error on daily/weekly charts
@@ -653,12 +685,24 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
                                 timeframe.includes('30m') ||
                                 timeframe.includes('1h')
     
+    console.log(`🎯 Timeframe check: ${timeframe}, Is intraday: ${isIntradayTimeframe}`)
+    
     if (!isIntradayTimeframe) {
       console.log(`⏭️ Skipping live update on ${timeframe} (not intraday)`)
       return
     }
 
     console.log(`📊 Live price update: ${liveData.symbol} @ ₹${liveData.price.toFixed(2)}`)
+    console.log(`📊 Candle data:`, {
+      time: new Date(liveData.timestamp).toLocaleString(),
+      timestamp: liveData.timestamp,
+      timestampSeconds: Math.floor(liveData.timestamp / 1000),
+      open: liveData.open,
+      high: liveData.high,
+      low: liveData.low,
+      close: liveData.price,
+      volume: liveData.volume
+    })
     
     // Update the last candle with live data
     const lastCandle = {
@@ -671,6 +715,7 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
 
     try {
       candlestickSeriesRef.current.update(lastCandle)
+      console.log('✅ Chart candle updated successfully')
       
       // Update volume
       if (volumeSeriesRef.current) {
@@ -680,15 +725,24 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
           value: liveData.volume,
           color: volumeColor,
         })
+        console.log('✅ Volume updated successfully')
       }
     } catch (error) {
-      console.error('Error updating live price:', error)
+      console.error('❌ Error updating live price:', error)
     }
   }, [liveData, isLiveConnected, timeframe])
 
-  // Update stock info panel with live price data
+  // Update stock info panel with live price data (ALWAYS, regardless of timeframe)
   useEffect(() => {
-    if (!liveData || !stockData) return
+    if (!liveData) return
+
+    console.log('💰 Updating price display with live data:', {
+      symbol: liveData.symbol,
+      price: liveData.price,
+      high: liveData.high,
+      low: liveData.low,
+      volume: liveData.volume
+    })
 
     // Update stockData with latest live prices
     setStockData(prev => prev ? {
@@ -792,13 +846,31 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     if (selectedStock) {
       console.log(`   → Fetching data for ${selectedStock.symbol}...`)
       
+      // Set loading state immediately
+      setLoading(true)
+      setChartError(null)
+      
       // Clear previous data before fetching new stock data
       setChartData([])
       setFullChartData([])
+      setStockData(null) // Clear stock data to show loading state
       
-      // Initial fetch only - SSE stream (useLivePrice) handles live updates
-      fetchStockPrice(selectedStock.symbol)
-      fetchChartData(selectedStock.symbol, timeframe)
+      // Fetch data immediately (no delay)
+      const fetchData = async () => {
+        try {
+          // Fetch stock price and chart data in parallel for faster loading
+          await Promise.all([
+            fetchStockPrice(selectedStock.symbol),
+            fetchChartData(selectedStock.symbol, timeframe)
+          ])
+          console.log(`✅ Data loaded for ${selectedStock.symbol}`)
+        } catch (error) {
+          console.error(`❌ Error loading data for ${selectedStock.symbol}:`, error)
+          setChartError("Failed to load chart data")
+        }
+      }
+      
+      fetchData()
       
       // ✅ REMOVED REDUNDANT POLLING: SSE stream already updates stock price every 5s
       // No need for setInterval - useLivePrice hook provides real-time updates
