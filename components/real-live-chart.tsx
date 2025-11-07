@@ -775,8 +775,8 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     setStockData(prev => ({
       symbol: liveData.symbol,
       price: liveData.price,
-      change: liveData.change,
-      changePercent: liveData.changePercent,
+      change: liveData.change ?? 0,
+      changePercent: liveData.changePercent ?? 0,
       high: liveData.high,
       low: liveData.low,
       open: liveData.open,
@@ -1018,12 +1018,14 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
     return `₹${price.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
-  const formatChange = (change: number) => {
+  const formatChange = (change: number | null | undefined) => {
+    if (change === null || change === undefined) return "+0.00"
     const sign = change >= 0 ? "+" : ""
     return `${sign}${change.toFixed(2)}`
   }
 
-  const formatPercentage = (percent: number) => {
+  const formatPercentage = (percent: number | null | undefined) => {
+    if (percent === null || percent === undefined) return "+0.00%"
     const sign = percent >= 0 ? "+" : ""
     return `${sign}${percent.toFixed(2)}%`
   }
@@ -1193,9 +1195,9 @@ export default function RealLiveChart({ onStockChange, onTimeframeChange, onData
                   {formatPrice(stockData.price)}
                 </div>
                 <div className={`flex items-center justify-end text-sm font-medium ${
-                  stockData.change >= 0 ? "text-green-400" : "text-red-400"
+                  (stockData.change ?? 0) >= 0 ? "text-green-400" : "text-red-400"
                 }`}>
-                  {stockData.change >= 0 ? (
+                  {(stockData.change ?? 0) >= 0 ? (
                     <TrendingUp className="h-3.5 w-3.5 mr-1" />
                   ) : (
                     <TrendingDown className="h-3.5 w-3.5 mr-1" />
