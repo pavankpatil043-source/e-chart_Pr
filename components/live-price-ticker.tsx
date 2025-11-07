@@ -21,7 +21,7 @@ export function LivePriceTicker({ symbol, enabled = true }: LivePriceTickerProps
     )
   }
 
-  const isPositive = liveData.change >= 0
+  const isPositive = (liveData.change ?? 0) >= 0
   const isMarketOpen = liveData.marketState === 'REGULAR' || liveData.marketState === 'PRE'
 
   return (
@@ -55,7 +55,7 @@ export function LivePriceTicker({ symbol, enabled = true }: LivePriceTickerProps
           <div className={`flex items-center gap-1 ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
             {isPositive ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
             <span className="text-sm font-medium">
-              {isPositive ? '+' : ''}{liveData.change.toFixed(2)} ({isPositive ? '+' : ''}{liveData.changePercent.toFixed(2)}%)
+              {isPositive ? '+' : ''}{(liveData.change ?? 0).toFixed(2)} ({isPositive ? '+' : ''}{(liveData.changePercent ?? 0).toFixed(2)}%)
             </span>
           </div>
         </div>
