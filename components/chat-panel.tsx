@@ -100,7 +100,7 @@ export function ChatPanel() {
         return {
           content: `📊 **LIVE Nifty 50 Analysis** 🔴
 
-**Current Level:** ${niftyPrice.toFixed(2)} (${niftyChange > 0 ? "+" : ""}${niftyChange.toFixed(2)}, ${niftyChangePercent > 0 ? "+" : ""}${niftyChangePercent.toFixed(2)}%)
+**Current Level:** ${niftyPrice.toFixed(2)} (${niftyChange > 0 ? "+" : ""}${(niftyChange ?? 0).toFixed(2)}, ${niftyChangePercent > 0 ? "+" : ""}${(niftyChangePercent ?? 0).toFixed(2)}%)
 
 **Real-time Technical Analysis:**
 • **Live Support:** ${(niftyPrice * 0.998).toFixed(0)} | ${(niftyPrice * 0.995).toFixed(0)}
@@ -129,7 +129,7 @@ ${isConnected ? "✅ Connected to live NSE feeds" : "⚠️ Using simulated data
           return {
             content: `⛽ **LIVE Reliance Industries Analysis** 🔴
 
-**Real-time Price:** ₹${reliancePrice.price} (${reliancePrice.changePercent > 0 ? "+" : ""}${reliancePrice.changePercent.toFixed(2)}%)
+**Real-time Price:** ₹${reliancePrice.price} (${reliancePrice.changePercent > 0 ? "+" : ""}${(reliancePrice.changePercent ?? 0).toFixed(2)}%)
 
 **Live Technical Levels:**
 • **Current Trend:** ${reliancePrice.changePercent > 0 ? "Bullish 📈" : "Bearish 📉"}
@@ -168,7 +168,7 @@ ${isConnected ? "✅ Connected to live NSE feeds" : "⚠️ Using simulated data
 ${topGainers
   .map(
     (stock, index) =>
-      `${index + 1}. **${stock.symbol.replace(".NS", "")}** - ₹${stock.price} (+${stock.changePercent.toFixed(2)}%)`,
+      `${index + 1}. **${stock.symbol.replace(".NS", "")}** - ₹${stock.price} (+${(stock.changePercent ?? 0).toFixed(2)}%)`,
   )
   .join("\n")}
 
@@ -201,13 +201,13 @@ ${topGainers.length > 0 ? `• ${topGainers[0].symbol.replace(".NS", "")} showin
         return {
           content: `🏦 **LIVE Banking Sector Analysis** 🔴
 
-**Real-time Sector Performance:** ${avgChange > 0 ? "📈 Outperforming" : "📉 Underperforming"} (${avgChange > 0 ? "+" : ""}${avgChange.toFixed(2)}%)
+**Real-time Sector Performance:** ${avgChange > 0 ? "📈 Outperforming" : "📉 Underperforming"} (${avgChange > 0 ? "+" : ""}${(avgChange ?? 0).toFixed(2)}%)
 
 **Live Banking Stocks:**
 ${bankingStocks
   .map(
     (stock) =>
-      `• **${stock.symbol.replace(".NS", "")}** - ₹${stock.price} (${stock.changePercent > 0 ? "+" : ""}${stock.changePercent.toFixed(2)}%)`,
+      `• **${stock.symbol.replace(".NS", "")}** - ₹${stock.price} (${stock.changePercent > 0 ? "+" : ""}${(stock.changePercent ?? 0).toFixed(2)}%)`,
   )
   .join("\n")}
 
@@ -291,7 +291,7 @@ I have real-time access to NSE/BSE data feeds! Current status:
 📋 Real-time portfolio insights
 
 **Currently Tracking:**
-${Array.from(prices.values()).map((p) => `• ${p.symbol.replace(".NS", "")}: ₹${p.price} (${p.changePercent > 0 ? "+" : ""}${p.changePercent.toFixed(2)}%)`).join("\n")}
+${Array.from(prices.values()).map((p) => `• ${p.symbol.replace(".NS", "")}: ₹${p.price} (${p.changePercent > 0 ? "+" : ""}${(p.changePercent ?? 0).toFixed(2)}%)`).join("\n")}
 
 Ask me about any stock, sector, or market trend for live analysis!`,
       }
@@ -338,7 +338,7 @@ Ask me about any stock, sector, or market trend for live analysis!`,
   )
 
   const formatMarketData = useCallback((data: any) => {
-    const isPositive = data.change >= 0
+    const isPositive = (data.change ?? 0) >= 0
     return (
       <Card className="mt-2 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
         <CardContent className="p-3">
@@ -354,14 +354,14 @@ Ask me about any stock, sector, or market trend for live analysis!`,
             <Badge variant={isPositive ? "default" : "destructive"} className="text-xs">
               {isPositive ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
               {isPositive ? "+" : ""}
-              {data.changePercent.toFixed(2)}%
+              {(data.changePercent ?? 0).toFixed(2)}%
             </Badge>
           </div>
           {data.price > 0 && (
             <div className="mt-1">
               <span className="text-lg font-bold text-gray-900">₹{data.price.toLocaleString("en-IN")}</span>
               <span className={`ml-2 text-sm ${isPositive ? "text-green-600" : "text-red-600"}`}>
-                {isPositive ? "+" : ""}₹{Math.abs(data.change).toFixed(2)}
+                {isPositive ? "+" : ""}₹{Math.abs(data.change ?? 0).toFixed(2)}
               </span>
             </div>
           )}
