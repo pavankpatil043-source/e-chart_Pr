@@ -95,10 +95,10 @@ export async function GET(request: NextRequest) {
       previousClose: Number(previousClose.toFixed(2)),
       open: Number((meta.regularMarketOpen || opens[lastIndex] || currentPrice).toFixed(2)),
       dayHigh: Number(
-        (meta.regularMarketDayHigh || Math.max(...highs.filter((h: any) => h !== null)) || currentPrice).toFixed(2),
+        (meta.regularMarketDayHigh || Math.max(...highs.filter((h: number) => h !== null)) || currentPrice).toFixed(2),
       ),
       dayLow: Number(
-        (meta.regularMarketDayLow || Math.min(...lows.filter((l: any) => l !== null)) || currentPrice).toFixed(2),
+        (meta.regularMarketDayLow || Math.min(...lows.filter((l: number) => l !== null)) || currentPrice).toFixed(2),
       ),
       volume: Math.floor(meta.regularMarketVolume || volumes[lastIndex] || 0),
       marketCap: Math.floor(meta.marketCap || currentPrice * 1000000000),

@@ -70,14 +70,14 @@ export async function GET(request: NextRequest) {
 
     // Filter for Indian market relevance
     const indianMarketNews = newsData.filter(
-      (item) => isIndianMarketRelevant(item.title) || isIndianMarketRelevant(item.summary),
+      (item: any) => isIndianMarketRelevant(item.title) || isIndianMarketRelevant(item.summary),
     )
 
     // If not enough Indian market news, supplement with general market news
     const finalNews =
       indianMarketNews.length >= limit / 2
         ? indianMarketNews.slice(0, limit)
-        : [...indianMarketNews, ...newsData.filter((item) => !indianMarketNews.includes(item))].slice(0, limit)
+        : [...indianMarketNews, ...newsData.filter((item: any) => !indianMarketNews.includes(item))].slice(0, limit)
 
     // Update cache
     newsCache = {
@@ -168,7 +168,7 @@ function analyzeSentiment(text: string): "positive" | "negative" | "neutral" {
 }
 
 function extractSymbols(text: string): string[] {
-  const symbols: string[] = []
+  const symbols: any[] = []
   const textUpper = text.toUpperCase()
 
   const commonSymbols = [
